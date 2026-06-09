@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PathToLeadership – Quiz</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;min-height:100vh;display:flex;align-items:center;justify-content:center;color:#1a202c}
+    .container{background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.1);padding:40px;max-width:680px;width:100%;margin:20px}
+    .screen{display:none}.screen.active{display:block}
+    h1{font-size:1.8rem;font-weight:700;margin-bottom:8px}
+    h2{font-size:1.3rem;font-weight:600;color:#2d3748;margin-bottom:16px}
+    p{color:#4a5568;line-height:1.6}
+    .logo{width:52px;height:52px;background:#4f46e5;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:24px}
+    .logo svg{width:28px;height:28px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+    .field{margin-bottom:18px}
+    .field label{display:block;font-weight:600;font-size:14px;margin-bottom:6px;color:#2d3748}
+    .field input{width:100%;padding:11px 14px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:15px;font-family:inherit;transition:border-color .15s}
+    .field input:focus{outline:none;border-color:#4f46e5}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 24px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;border:none;transition:all .2s}
+    .btn-primary{background:#4f46e5;color:#fff;width:100%;justify-content:center;margin-top:8px}
+    .btn-primary:hover{background:#4338ca}
+    .btn-primary:disabled{background:#a5b4fc;cursor:not-allowed}
+    .btn-back{background:none;color:#718096;border:1.5px solid #e2e8f0}
+    .btn-back:hover{border-color:#a0aec0;color:#4a5568}
+    .progress-label{font-size:13px;color:#718096;margin-bottom:8px}
+    .progress-bar{height:6px;background:#e2e8f0;border-radius:3px;margin-bottom:28px;overflow:hidden}
+    .progress-fill{height:100%;background:#4f46e5;border-radius:3px;transition:width .3s}
+    .question-text{font-size:17px;font-weight:600;margin-bottom:20px;line-height:1.5}
+    .options-list{list-style:none;display:flex;flex-direction:column;gap:10px}
+    .option-item label{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border:1.5px solid #e2e8f0;border-radius:8px;cursor:pointer;transition:all .15s;font-size:15px;line-height:1.4}
+    .option-item input[type=radio]{margin-top:2px;accent-color:#4f46e5;flex-shrink:0}
+    .option-item label:hover{border-color:#4f46e5;background:#f5f3ff}
+    .option-item:has(input:checked) label{border-color:#4f46e5;background:#f5f3ff}
+    .text-input{width:100%;padding:12px 14px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:15px;font-family:inherit;resize:vertical;min-height:90px;transition:border-color .15s}
+    .text-input:focus{outline:none;border-color:#4f46e5}
+    .nav-buttons{display:flex;justify-content:space-between;align-items:center;margin-top:28px;gap:12px}
+    .score-circle{width:130px;height:130px;border-radius:50%;background:linear-gradient(135deg,#4f46e5,#7c3aed);display:flex;flex-direction:column;align-items:center;justify-content:center;margin:0 auto 24px;color:#fff}
+    .score-number{font-size:38px;font-weight:800;line-height:1}
+    .score-label{font-size:12px;opacity:.85;margin-top:4px}
+    .result-header{text-align:center;margin-bottom:28px}
+    .result-header h2{margin-bottom:6px}
+    .review-section{margin-top:20px}
+    .review-section h3{font-size:14px;color:#718096;margin-bottom:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+    .answer-item{padding:12px 14px;border-radius:8px;margin-bottom:8px;font-size:14px}
+    .answer-correct{background:#f0fff4;border:1.5px solid #9ae6b4}
+    .answer-wrong{background:#fff5f5;border:1.5px solid #feb2b2}
+    .answer-open{background:#fffbeb;border:1.5px solid #fbd38d}
+    .answer-q{font-weight:600;color:#2d3748;margin-bottom:4px}
+    .answer-given{color:#4a5568;font-size:13px}
+    .answer-verdict{font-size:12px;margin-top:3px;font-weight:600}
+    .answer-correct .answer-verdict{color:#276749}
+    .answer-wrong .answer-verdict{color:#c53030}
+    .answer-open .answer-verdict{color:#744210}
+    .loading{text-align:center;padding:48px 20px;color:#718096}
+    .spinner{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#4f46e5;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .error-box{background:#fff5f5;border:1.5px solid #feb2b2;border-radius:8px;padding:12px 14px;color:#c53030;font-size:14px;margin-top:14px;display:none}
+    .info-note{background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:12px 14px;color:#1e40af;font-size:13px;margin-top:14px}
+    .subtitle{font-size:14px;color:#718096;margin-top:6px}
+    .quiz-title{font-size:1.1rem;font-weight:700;color:#4f46e5;margin-bottom:20px;padding-bottom:14px;border-bottom:1.5px solid #e2e8f0}
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- INFO SCREEN -->
+  <div id="screen-info" class="screen active">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+    </div>
+    <h1>PathToLeadership</h1>
+    <p class="subtitle" id="quiz-subtitle">Loading quiz...</p>
+    <p style="margin-top:16px">Please enter your details below to begin.</p>
+    <div style="margin-top:24px">
+      <div class="field">
+        <label>Full Name</label>
+        <input type="text" id="taker-name" placeholder="e.g. Juan Dela Cruz" autocomplete="name">
+      </div>
+      <div class="field">
+        <label>Email Address</label>
+        <input type="email" id="taker-email" placeholder="e.g. juan@example.com" autocomplete="email">
+      </div>
+    </div>
+    <button class="btn btn-primary" id="btn-start" onclick="startQuiz()">Begin Quiz →</button>
+    <div id="info-error" class="error-box"></div>
+  </div>
+
+  <!-- LOADING -->
+  <div id="screen-loading" class="screen">
+    <div class="loading">
+      <div class="spinner"></div>
+      <p id="loading-msg">Loading quiz...</p>
+    </div>
+  </div>
+
+  <!-- QUIZ -->
+  <div id="screen-quiz" class="screen">
+    <div class="quiz-title" id="quiz-title-bar"></div>
+    <div class="progress-label" id="progress-label"></div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    <div id="question-card"></div>
+    <div class="nav-buttons">
+      <button class="btn btn-back" id="btn-back" onclick="prevQuestion()">← Back</button>
+      <button class="btn btn-primary" id="btn-next" style="width:auto" onclick="nextOrSubmit()">Next →</button>
+    </div>
+    <div id="quiz-error" class="error-box"></div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="screen-results" class="screen">
+    <div class="result-header">
+      <div class="score-circle">
+        <div class="score-number" id="score-number">–</div>
+        <div class="score-label" id="score-label">Score</div>
+      </div>
+      <h2 id="result-msg"></h2>
+      <p>A confirmation has been sent to your email.</p>
+    </div>
+    <div class="review-section">
+      <h3>Your Answers</h3>
+      <div id="answers-list"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── CONFIG — paste your Apps Script Web App URL here ──────────
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyYm58adtixEQnX43kJ4ZONS03aCKyYgnVmqcLSoliHRue664ARVvjWsxZiVszCROrS6A/exec';
+// ─────────────────────────────────────────────────────────────
+
+let quizId, quizData, answers, currentIndex;
+let takerName, takerEmail;
+
+// ── INIT ──────────────────────────────────────────────────────
+window.addEventListener('load', async () => {
+  const params = new URLSearchParams(window.location.search);
+  quizId = params.get('id');
+
+  if (!quizId) {
+    document.getElementById('quiz-subtitle').textContent = 'No quiz specified.';
+    showError('info-error', 'No quiz ID found in the URL. Please use a valid quiz link.');
+    document.getElementById('btn-start').disabled = true;
+    return;
+  }
+
+  if (!SCRIPT_URL || SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    showError('info-error', 'Quiz is not configured yet. Please contact your administrator.');
+    document.getElementById('btn-start').disabled = true;
+    return;
+  }
+
+  try {
+    setLoading('Fetching quiz...');
+    showScreen('screen-loading');
+    const res = await fetch(`${SCRIPT_URL}?action=getQuiz&id=${encodeURIComponent(quizId)}`);
+    quizData = await res.json();
+    if (quizData.error) throw new Error(quizData.error);
+
+    document.getElementById('quiz-subtitle').textContent = quizData.name;
+    showScreen('screen-info');
+  } catch (e) {
+    showScreen('screen-info');
+    document.getElementById('quiz-subtitle').textContent = 'Error loading quiz';
+    showError('info-error', e.message || 'Failed to load quiz. Please try again.');
+    document.getElementById('btn-start').disabled = true;
+  }
+});
+
+// ── START ─────────────────────────────────────────────────────
+function startQuiz() {
+  takerName  = document.getElementById('taker-name').value.trim();
+  takerEmail = document.getElementById('taker-email').value.trim();
+
+  if (!takerName) { showError('info-error', 'Please enter your full name.'); return; }
+  if (!takerEmail || !takerEmail.includes('@')) {
+    showError('info-error', 'Please enter a valid email address.'); return;
+  }
+
+  answers      = new Array(quizData.questions.length).fill(null);
+  currentIndex = 0;
+  document.getElementById('quiz-title-bar').textContent = quizData.name;
+  showScreen('screen-quiz');
+  renderQuestion();
+}
+
+// ── RENDER QUESTION ───────────────────────────────────────────
+function renderQuestion() {
+  const q     = quizData.questions[currentIndex];
+  const total = quizData.questions.length;
+  const saved = answers[currentIndex];
+
+  document.getElementById('progress-label').textContent = `Question ${currentIndex + 1} of ${total}`;
+  document.getElementById('progress-fill').style.width = ((currentIndex / total) * 100) + '%';
+
+  const type = (q.type || '').toLowerCase();
+  let html = `<div class="question-text">${esc(q.question)}</div>`;
+
+  if (type.includes('multiple') || type.includes('mc') || type.includes('choice')) {
+    html += `<ul class="options-list">`;
+    (q.options || []).forEach(opt => {
+      const chk = saved === opt ? 'checked' : '';
+      html += `<li class="option-item"><label>
+        <input type="radio" name="q" value="${esc(opt)}" ${chk} onchange="saveAnswer(this.value)">
+        <span>${esc(opt)}</span>
+      </label></li>`;
+    });
+    html += `</ul>`;
+  } else if (type.includes('true') || type.includes('false') || type === 'tf') {
+    html += `<ul class="options-list">`;
+    ['True', 'False'].forEach(opt => {
+      const chk = saved === opt ? 'checked' : '';
+      html += `<li class="option-item"><label>
+        <input type="radio" name="q" value="${opt}" ${chk} onchange="saveAnswer(this.value)">
+        <span>${opt}</span>
+      </label></li>`;
+    });
+    html += `</ul>`;
+  } else {
+    html += `<textarea class="text-input" placeholder="Type your answer here..." oninput="saveAnswer(this.value)">${esc(saved || '')}</textarea>`;
+  }
+
+  document.getElementById('question-card').innerHTML = html;
+  document.getElementById('btn-next').textContent   = currentIndex === total - 1 ? 'Submit Quiz ✓' : 'Next →';
+  document.getElementById('btn-back').style.visibility = currentIndex === 0 ? 'hidden' : 'visible';
+  document.getElementById('quiz-error').style.display  = 'none';
+}
+
+function saveAnswer(val) { answers[currentIndex] = val; }
+
+function nextOrSubmit() {
+  const ans = answers[currentIndex];
+  if (!ans || ans.trim() === '') {
+    showError('quiz-error', 'Please answer this question before continuing.');
+    return;
+  }
+  if (currentIndex < quizData.questions.length - 1) {
+    currentIndex++;
+    renderQuestion();
+  } else {
+    submitQuiz();
+  }
+}
+
+function prevQuestion() {
+  if (currentIndex > 0) { currentIndex--; renderQuestion(); }
+}
+
+// ── SUBMIT ────────────────────────────────────────────────────
+async function submitQuiz() {
+  setLoading('Submitting your answers...');
+  showScreen('screen-loading');
+
+  try {
+    const params = new URLSearchParams({
+      action:  'submit',
+      quizId,
+      name:    takerName,
+      email:   takerEmail,
+      answers: JSON.stringify(answers)
+    });
+    const res    = await fetch(`${SCRIPT_URL}?${params.toString()}`);
+    const result = await res.json();
+
+    if (result.error) throw new Error(result.error);
+    showResults(result);
+  } catch (e) {
+    // If submission failed, still show a results screen
+    showResults({ error: e.message });
+  }
+}
+
+// ── RESULTS ───────────────────────────────────────────────────
+function showResults(result) {
+  if (result.error) {
+    document.getElementById('score-number').textContent = '!';
+    document.getElementById('score-label').textContent  = 'Error';
+    document.getElementById('result-msg').textContent   = 'Submission issue';
+    document.getElementById('answers-list').innerHTML   =
+      `<div class="answer-item answer-wrong"><div class="answer-q">Could not save your responses: ${esc(result.error)}</div></div>`;
+    showScreen('screen-results');
+    return;
+  }
+
+  const { pct, scoreStr, results, total } = result;
+  document.getElementById('score-number').textContent = pct !== null ? pct + '%' : '✓';
+  document.getElementById('score-label').textContent  = total > 0 ? scoreStr : 'Submitted';
+  document.getElementById('result-msg').textContent   =
+    pct === null ? '✅ Quiz Complete!' :
+    pct >= 80    ? '🎉 Excellent work!' :
+    pct >= 60    ? '👍 Good effort!'   : '📚 Keep studying!';
+
+  let html = '';
+  quizData.questions.forEach((q, i) => {
+    const userAns  = answers[i] || '';
+    const isCorrect = results ? results[i] : null;
+
+    if (isCorrect === null) {
+      html += `<div class="answer-item answer-open">
+        <div class="answer-q">Q${i+1}: ${esc(q.question)}</div>
+        <div class="answer-given">Your answer: ${esc(userAns)}</div>
+        <div class="answer-verdict">Open-ended — not auto-graded</div>
+      </div>`;
+    } else if (isCorrect) {
+      html += `<div class="answer-item answer-correct">
+        <div class="answer-q">Q${i+1}: ${esc(q.question)}</div>
+        <div class="answer-given">Your answer: ${esc(userAns)}</div>
+        <div class="answer-verdict">✓ Correct</div>
+      </div>`;
+    } else {
+      html += `<div class="answer-item answer-wrong">
+        <div class="answer-q">Q${i+1}: ${esc(q.question)}</div>
+        <div class="answer-given">Your answer: ${esc(userAns)}</div>
+        <div class="answer-verdict">✗ Incorrect</div>
+      </div>`;
+    }
+  });
+
+  document.getElementById('answers-list').innerHTML = html;
+  showScreen('screen-results');
+}
+
+// ── HELPERS ───────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent  = msg;
+  el.style.display = 'block';
+}
+function setLoading(msg) {
+  document.getElementById('loading-msg').textContent = msg || 'Loading...';
+}
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

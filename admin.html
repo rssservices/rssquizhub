@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PathToLeadership – Admin</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;min-height:100vh;color:#1a202c}
+    /* ── Login ── */
+    .login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh}
+    .login-card{background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.1);padding:40px;max-width:420px;width:100%;margin:20px}
+    .logo{width:52px;height:52px;background:#4f46e5;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:24px}
+    .logo svg{width:28px;height:28px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+    h1{font-size:1.7rem;font-weight:700;margin-bottom:6px}
+    .subtitle{font-size:14px;color:#718096;margin-bottom:4px}
+    .btn-google{display:inline-flex;align-items:center;gap:10px;padding:12px 20px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;border:1.5px solid #dadce0;background:#fff;color:#3c4043;margin-top:24px;transition:all .2s;width:100%;justify-content:center}
+    .btn-google:hover{background:#f8f9fa;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+    /* ── Layout ── */
+    #app{display:none;min-height:100vh;flex-direction:column}
+    .topbar{background:#fff;border-bottom:1px solid #e2e8f0;padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+    .topbar-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+    .topbar-logo{width:32px;height:32px;background:#4f46e5;border-radius:8px;display:flex;align-items:center;justify-content:center}
+    .topbar-logo svg{width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+    .topbar-badge{font-size:11px;background:#e0e7ff;color:#4f46e5;padding:2px 8px;border-radius:20px;font-weight:600}
+    .topbar-right{display:flex;align-items:center;gap:12px}
+    .user-chip{display:flex;align-items:center;gap:8px;font-size:14px;color:#4a5568}
+    .user-avatar{width:30px;height:30px;border-radius:50%;background:#4f46e5;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
+    .btn-sm{padding:7px 14px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid #e2e8f0;background:#fff;color:#4a5568;transition:all .2s}
+    .btn-sm:hover{border-color:#a0aec0}
+    .main{padding:28px 24px;max-width:960px;margin:0 auto;width:100%}
+    /* ── Buttons ── */
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .2s}
+    .btn-primary{background:#4f46e5;color:#fff}
+    .btn-primary:hover{background:#4338ca}
+    .btn-danger{background:#fff;color:#e53e3e;border:1.5px solid #fed7d7}
+    .btn-danger:hover{background:#fff5f5}
+    .btn-ghost{background:none;color:#4a5568;border:1.5px solid #e2e8f0}
+    .btn-ghost:hover{border-color:#a0aec0}
+    /* ── Dashboard ── */
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+    .page-header h2{font-size:1.3rem;font-weight:700}
+    .empty-state{text-align:center;padding:60px 20px;color:#a0aec0}
+    .empty-state svg{width:48px;height:48px;margin:0 auto 16px;display:block;stroke:#cbd5e0;fill:none;stroke-width:1.5}
+    .empty-state p{font-size:15px}
+    .quiz-grid{display:grid;gap:14px}
+    .quiz-card{background:#fff;border-radius:10px;border:1.5px solid #e2e8f0;padding:18px 20px;transition:border-color .15s}
+    .quiz-card:hover{border-color:#c7d2fe}
+    .quiz-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .quiz-card-title{font-weight:700;font-size:15px;margin-bottom:4px}
+    .quiz-meta{font-size:12px;color:#a0aec0}
+    .badge{display:inline-flex;align-items:center;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+    .badge-active{background:#c6f6d5;color:#276749}
+    .badge-inactive{background:#fed7d7;color:#c53030}
+    .quiz-card-actions{display:flex;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap}
+    .btn-xs{padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid #e2e8f0;background:#fff;color:#4a5568;transition:all .2s;display:inline-flex;align-items:center;gap:5px}
+    .btn-xs:hover{border-color:#a0aec0;background:#f7fafc}
+    .btn-xs.danger{color:#e53e3e;border-color:#fed7d7}
+    .btn-xs.danger:hover{background:#fff5f5}
+    .link-box{display:flex;align-items:center;gap:8px;background:#f7fafc;border:1.5px solid #e2e8f0;border-radius:6px;padding:6px 10px;margin-top:10px}
+    .link-box input{flex:1;border:none;background:none;font-size:12px;color:#4a5568;outline:none;font-family:monospace}
+    .link-box button{flex-shrink:0;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:none;background:#4f46e5;color:#fff;transition:background .15s}
+    .link-box button:hover{background:#4338ca}
+    /* ── Form ── */
+    .form-header{display:flex;align-items:center;gap:14px;margin-bottom:28px;padding-bottom:18px;border-bottom:1.5px solid #e2e8f0}
+    .form-header h2{font-size:1.2rem;font-weight:700}
+    .form-section{background:#fff;border-radius:10px;border:1.5px solid #e2e8f0;padding:22px;margin-bottom:18px}
+    .form-section h3{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#718096;margin-bottom:16px}
+    .field{margin-bottom:16px}
+    .field:last-child{margin-bottom:0}
+    .field label{display:block;font-weight:600;font-size:13px;margin-bottom:6px;color:#2d3748}
+    .field input,.field textarea,.field select{width:100%;padding:10px 13px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:14px;font-family:inherit;transition:border-color .15s;background:#fff;color:#1a202c}
+    .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:#4f46e5}
+    .field textarea{resize:vertical;min-height:80px}
+    .field-hint{font-size:12px;color:#a0aec0;margin-top:4px}
+    .toggle-row{display:flex;align-items:center;justify-content:space-between}
+    .toggle{position:relative;display:inline-block;width:42px;height:24px}
+    .toggle input{opacity:0;width:0;height:0}
+    .slider{position:absolute;cursor:pointer;inset:0;background:#e2e8f0;border-radius:24px;transition:.2s}
+    .slider:before{position:absolute;content:'';height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+    input:checked+.slider{background:#4f46e5}
+    input:checked+.slider:before{transform:translateX(18px)}
+    /* ── Question Builder ── */
+    .q-card{background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:18px;margin-bottom:12px;position:relative}
+    .q-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+    .q-num{width:26px;height:26px;background:#e0e7ff;color:#4f46e5;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+    .q-card-header-right{display:flex;align-items:center;gap:8px}
+    .q-fields{display:grid;gap:12px}
+    .q-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media(max-width:560px){.q-row{grid-template-columns:1fr}}
+    .add-q-btn{width:100%;padding:12px;border-radius:8px;border:2px dashed #c7d2fe;background:none;color:#4f46e5;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;margin-bottom:18px}
+    .add-q-btn:hover{background:#f5f3ff;border-color:#4f46e5}
+    .form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:4px}
+    /* ── Misc ── */
+    .loading-full{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;color:#718096}
+    .spinner{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#4f46e5;border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .toast{position:fixed;bottom:24px;right:24px;background:#1a202c;color:#fff;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:500;z-index:999;transform:translateY(100px);opacity:0;transition:all .3s}
+    .toast.show{transform:translateY(0);opacity:1}
+    .error-box{background:#fff5f5;border:1.5px solid #feb2b2;border-radius:8px;padding:12px 14px;color:#c53030;font-size:14px;margin-top:12px;display:none}
+    .responses-count{font-size:12px;color:#718096;font-weight:500}
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-wrap" class="login-wrap">
+  <div class="login-card">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+    </div>
+    <h1>PathToLeadership</h1>
+    <p class="subtitle">Quiz Admin Panel</p>
+    <p style="margin-top:14px;font-size:14px;color:#4a5568">Sign in with your Google account to manage quizzes.</p>
+    <button class="btn-google" onclick="signIn()">
+      <svg width="18" height="18" viewBox="0 0 18 18">
+        <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/>
+        <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2.04a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/>
+        <path fill="#FBBC05" d="M4.5 10.48A4.8 4.8 0 014.5 7.52V5.45H1.83a8 8 0 000 7.1L4.5 10.48z"/>
+        <path fill="#EA4335" d="M8.98 3.58c1.32 0 2.44.45 3.34 1.3l2.5-2.5A8 8 0 001.83 5.45L4.5 7.52c.65-1.94 2.44-3.94 4.48-3.94z"/>
+      </svg>
+      Sign in with Google
+    </button>
+    <div id="login-error" class="error-box"></div>
+  </div>
+</div>
+
+<!-- FULL-SCREEN LOADING -->
+<div id="loading-full" class="loading-full" style="display:none">
+  <div class="spinner"></div>
+  <p id="loading-full-msg">Loading...</p>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-brand">
+      <div class="topbar-logo">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+      </div>
+      PathToLeadership
+      <span class="topbar-badge">Admin</span>
+    </div>
+    <div class="topbar-right">
+      <div class="user-chip">
+        <div class="user-avatar" id="nav-avatar">?</div>
+        <span id="nav-name"></span>
+      </div>
+      <button class="btn-sm" onclick="signOut()">Sign out</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- DASHBOARD VIEW -->
+    <div id="view-dashboard">
+      <div class="page-header">
+        <h2>All Quizzes</h2>
+        <button class="btn btn-primary" onclick="showCreateForm()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Quiz
+        </button>
+      </div>
+      <div id="quiz-list"></div>
+    </div>
+
+    <!-- FORM VIEW -->
+    <div id="view-form" style="display:none">
+      <div class="form-header">
+        <button class="btn btn-ghost" onclick="showDashboard()">← Back</button>
+        <h2 id="form-title">Create New Quiz</h2>
+      </div>
+
+      <div class="form-section">
+        <h3>Quiz Details</h3>
+        <div class="field">
+          <label>Quiz Title</label>
+          <input type="text" id="f-title" placeholder="e.g. Debriefing Quiz 2">
+        </div>
+        <div class="field">
+          <div class="toggle-row">
+            <div>
+              <label style="margin-bottom:2px">Active</label>
+              <div class="field-hint" style="margin:0">Inactive quizzes cannot be taken</div>
+            </div>
+            <label class="toggle"><input type="checkbox" id="f-active" checked><span class="slider"></span></label>
+          </div>
+        </div>
+        <div class="field">
+          <label>Notification Emails</label>
+          <textarea id="f-notify" placeholder="Enter email addresses separated by commas&#10;e.g. manager@company.com, hr@company.com"></textarea>
+          <div class="field-hint">These people receive a summary email each time the quiz is submitted.</div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>Questions</h3>
+        <div id="questions-list"></div>
+        <button class="add-q-btn" onclick="addQuestion()">+ Add Question</button>
+      </div>
+
+      <div id="form-error" class="error-box"></div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="showDashboard()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveQuiz()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          Save Quiz
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast" class="toast"></div>
+
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script>
+// ── CONFIG ────────────────────────────────────────────────────
+const CLIENT_ID  = '445306017631-i2rid20egibb0srt9n24ot42flgr6v24.apps.googleusercontent.com';
+const SHEET_ID   = '1zQouTLEmbuqNX_SuI_nvqmJFKV7juWAonRyK2gMTZDM';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyYm58adtixEQnX43kJ4ZONS03aCKyYgnVmqcLSoliHRue664ARVvjWsxZiVszCROrS6A/exec'; // paste your Apps Script URL here
+const SCOPES     = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid';
+// ─────────────────────────────────────────────────────────────
+
+let tokenClient, accessToken, currentUser;
+let allQuizzes = [], editingQuizId = null, editingRowIndex = null;
+
+// ── AUTH ──────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  const t = setInterval(() => {
+    if (window.google && google.accounts) {
+      clearInterval(t);
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID, scope: SCOPES,
+        callback: handleToken,
+        error_callback: e => showLoginError('Sign-in failed: ' + (e.message || e.type))
+      });
+    }
+  }, 200);
+});
+
+function signIn() {
+  if (!tokenClient) { showLoginError('Still loading. Try again.'); return; }
+  tokenClient.requestAccessToken({ prompt: 'select_account' });
+}
+
+async function handleToken(resp) {
+  if (resp.error) { showLoginError(resp.error); return; }
+  accessToken = resp.access_token;
+  showFullLoading('Loading admin panel...');
+  try {
+    const u = await apiFetch('https://www.googleapis.com/oauth2/v3/userinfo');
+    currentUser = { name: u.name || '', email: u.email || '' };
+    await initSheet();
+    await loadDashboard();
+    document.getElementById('login-wrap').style.display = 'none';
+    document.getElementById('loading-full').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('nav-avatar').textContent = (currentUser.name || '?')[0].toUpperCase();
+    document.getElementById('nav-name').textContent   = currentUser.name;
+  } catch (e) {
+    hideFullLoading();
+    showLoginError(e.message || 'Failed to load. Please try again.');
+  }
+}
+
+function signOut() {
+  accessToken = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-wrap').style.display = 'flex';
+}
+
+// ── SHEET INITIALIZATION ──────────────────────────────────────
+async function initSheet() {
+  // Check if Quizzes tab exists; create it if not
+  const meta = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}?fields=sheets.properties.title`);
+  const titles = (meta.sheets || []).map(s => s.properties.title);
+  if (!titles.includes('Quizzes')) {
+    await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({ requests: [{ addSheet: { properties: { title: 'Quizzes' } } }] })
+    });
+    await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A1:E1?valueInputOption=USER_ENTERED`, {
+      method: 'PUT',
+      body: JSON.stringify({ values: [['ID', 'Name', 'Created', 'Active', 'NotifyEmails']] })
+    });
+  }
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────
+async function loadDashboard() {
+  const data = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A:E`);
+  const rows = (data.values || []).slice(1).filter(r => r[0]);
+  allQuizzes = rows.map((r, i) => ({
+    id:           r[0], name:    r[1], created: r[2],
+    active:       String(r[3]).toUpperCase() === 'TRUE',
+    notifyEmails: r[4] || '',
+    rowIndex:     i + 2 // 1-based, accounting for header row
+  }));
+  renderDashboard();
+}
+
+async function renderDashboard() {
+  const container = document.getElementById('quiz-list');
+  if (!allQuizzes.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        <p>No quizzes yet. Click <strong>New Quiz</strong> to create one.</p>
+      </div>`;
+    return;
+  }
+
+  // Fetch response counts
+  const counts = await Promise.all(allQuizzes.map(q => getResponseCount(q.id)));
+  const quizLink = id => {
+    const base = window.location.origin + window.location.pathname.replace('admin.html','') + 'quiz.html';
+    return `${base}?id=${id}`;
+  };
+
+  container.innerHTML = allQuizzes.map((q, i) => `
+    <div class="quiz-card">
+      <div class="quiz-card-top">
+        <div>
+          <div class="quiz-card-title">${esc(q.name)}</div>
+          <div class="quiz-meta">Created ${esc(q.created || '—')} &nbsp;·&nbsp;
+            <span class="responses-count">${counts[i]} response${counts[i] !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        <span class="badge ${q.active ? 'badge-active' : 'badge-inactive'}">${q.active ? 'Active' : 'Inactive'}</span>
+      </div>
+      <div class="link-box">
+        <input type="text" readonly value="${esc(quizLink(q.id))}" id="link-${q.id}">
+        <button onclick="copyLink('${q.id}')">Copy Link</button>
+      </div>
+      <div class="quiz-card-actions">
+        <button class="btn-xs" onclick="editQuiz('${q.id}')">✏️ Edit</button>
+        <button class="btn-xs" onclick="toggleActive('${q.id}')">${q.active ? '⏸ Deactivate' : '▶ Activate'}</button>
+      </div>
+    </div>`).join('');
+}
+
+async function getResponseCount(quizId) {
+  try {
+    const data = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/R_${quizId}!A:A`);
+    return Math.max(0, ((data.values || []).length) - 1);
+  } catch { return 0; }
+}
+
+function copyLink(quizId) {
+  const input = document.getElementById('link-' + quizId);
+  navigator.clipboard.writeText(input.value).then(() => showToast('Link copied!'));
+}
+
+async function toggleActive(quizId) {
+  const q = allQuizzes.find(x => x.id === quizId);
+  if (!q) return;
+  const newVal = !q.active;
+  await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!D${q.rowIndex}?valueInputOption=USER_ENTERED`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [[newVal ? 'TRUE' : 'FALSE']] })
+  });
+  q.active = newVal;
+  showToast(newVal ? 'Quiz activated' : 'Quiz deactivated');
+  renderDashboard();
+}
+
+function showDashboard() {
+  document.getElementById('view-dashboard').style.display = '';
+  document.getElementById('view-form').style.display = 'none';
+  editingQuizId = null; editingRowIndex = null;
+  loadDashboard();
+}
+
+// ── FORM: CREATE ──────────────────────────────────────────────
+function showCreateForm() {
+  editingQuizId = null; editingRowIndex = null;
+  document.getElementById('form-title').textContent = 'Create New Quiz';
+  document.getElementById('f-title').value   = '';
+  document.getElementById('f-active').checked = true;
+  document.getElementById('f-notify').value  = '';
+  document.getElementById('questions-list').innerHTML = '';
+  document.getElementById('form-error').style.display = 'none';
+  addQuestion(); // start with one blank question
+  document.getElementById('view-dashboard').style.display = 'none';
+  document.getElementById('view-form').style.display = '';
+  window.scrollTo(0, 0);
+}
+
+// ── FORM: EDIT ────────────────────────────────────────────────
+async function editQuiz(quizId) {
+  showFullLoading('Loading quiz...');
+  try {
+    const q = allQuizzes.find(x => x.id === quizId);
+    editingQuizId  = quizId;
+    editingRowIndex = q.rowIndex;
+
+    // Load questions
+    const data = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${quizId}!A:E`);
+    const qRows = (data.values || []).slice(1).filter(r => r[0]);
+
+    document.getElementById('form-title').textContent  = 'Edit Quiz';
+    document.getElementById('f-title').value           = q.name || '';
+    document.getElementById('f-active').checked        = q.active;
+    document.getElementById('f-notify').value          = q.notifyEmails || '';
+    document.getElementById('questions-list').innerHTML = '';
+    document.getElementById('form-error').style.display = 'none';
+
+    qRows.forEach(r => addQuestion({
+      question:      r[0] || '',
+      type:          r[1] || 'Multiple Choice',
+      options:       r[2] || '',
+      correctAnswer: r[3] || '',
+      points:        r[4] || '1'
+    }));
+
+    if (!qRows.length) addQuestion();
+    hideFullLoading();
+    document.getElementById('view-dashboard').style.display = 'none';
+    document.getElementById('view-form').style.display = '';
+    window.scrollTo(0, 0);
+  } catch (e) {
+    hideFullLoading();
+    showToast('Failed to load quiz: ' + e.message, true);
+  }
+}
+
+// ── QUESTION BUILDER ──────────────────────────────────────────
+let qCounter = 0;
+function addQuestion(data = {}) {
+  const id   = ++qCounter;
+  const list = document.getElementById('questions-list');
+  const num  = list.children.length + 1;
+  const type = data.type || 'Multiple Choice';
+
+  const div = document.createElement('div');
+  div.className = 'q-card';
+  div.dataset.qid = id;
+  div.innerHTML = `
+    <div class="q-card-header">
+      <span class="q-num">${num}</span>
+      <div class="q-card-header-right">
+        <button class="btn-xs danger" onclick="removeQuestion(${id})">✕ Remove</button>
+      </div>
+    </div>
+    <div class="q-fields">
+      <div class="field">
+        <label>Question</label>
+        <textarea class="q-question" rows="2" placeholder="Enter question text...">${esc(data.question || '')}</textarea>
+      </div>
+      <div class="q-row">
+        <div class="field">
+          <label>Type</label>
+          <select class="q-type" onchange="onTypeChange(${id})">
+            <option value="Multiple Choice"  ${type==='Multiple Choice'?'selected':''}>Multiple Choice</option>
+            <option value="True/False"       ${type==='True/False'||type==='TF'?'selected':''}>True / False</option>
+            <option value="Short Text"       ${type==='Short Text'||type.includes('text')||type.includes('short')?'selected':''}>Short Text (Open-ended)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Points</label>
+          <input type="number" class="q-points" value="${esc(data.points || '1')}" min="0" max="100">
+        </div>
+      </div>
+      <div class="q-options-wrap field">
+        <label>Answer Options <span style="color:#a0aec0;font-weight:400">(one per line)</span></label>
+        <textarea class="q-options" rows="4" placeholder="A. Option one&#10;B. Option two&#10;C. Option three&#10;D. Option four" oninput="updateCorrectSelect(${id})">${esc(data.options || '')}</textarea>
+      </div>
+      <div class="q-correct-wrap field">
+        <label>Correct Answer</label>
+        <select class="q-correct-select" style="display:none" onchange="syncCorrectInput(${id})"><option value="">— select —</option></select>
+        <input type="text" class="q-correct-input" placeholder="Type correct answer..." value="${esc(data.correctAnswer || '')}">
+        <div class="field-hint">For Multiple Choice: select from the options above. For Short Text: leave empty if ungraded.</div>
+      </div>
+    </div>`;
+
+  list.appendChild(div);
+  renumberQuestions();
+
+  // Initialize options/correct fields based on type
+  if (data.options) updateCorrectSelect(id, data.correctAnswer || '');
+  onTypeChange(id, type, data.correctAnswer);
+}
+
+function removeQuestion(id) {
+  const el = document.querySelector(`[data-qid="${id}"]`);
+  if (el) el.remove();
+  renumberQuestions();
+}
+
+function renumberQuestions() {
+  document.querySelectorAll('.q-card').forEach((card, i) => {
+    card.querySelector('.q-num').textContent = i + 1;
+  });
+}
+
+function onTypeChange(id, forceType, correctVal) {
+  const card     = document.querySelector(`[data-qid="${id}"]`);
+  const type     = forceType || card.querySelector('.q-type').value;
+  const optWrap  = card.querySelector('.q-options-wrap');
+  const corrWrap = card.querySelector('.q-correct-wrap');
+  const selEl    = card.querySelector('.q-correct-select');
+  const inpEl    = card.querySelector('.q-correct-input');
+
+  if (type === 'True/False') {
+    optWrap.style.display  = 'none';
+    corrWrap.style.display = '';
+    selEl.style.display    = '';
+    inpEl.style.display    = 'none';
+    selEl.innerHTML = '<option value="">— select —</option><option value="True">True</option><option value="False">False</option>';
+    if (correctVal) selEl.value = correctVal;
+    else if (forceType) { /* keep blank */ }
+  } else if (type === 'Short Text') {
+    optWrap.style.display  = 'none';
+    corrWrap.style.display = '';
+    selEl.style.display    = 'none';
+    inpEl.style.display    = '';
+    if (correctVal !== undefined) inpEl.value = correctVal;
+  } else {
+    // Multiple Choice
+    optWrap.style.display  = '';
+    corrWrap.style.display = '';
+    updateCorrectSelect(id, correctVal);
+  }
+}
+
+function updateCorrectSelect(id, preselect) {
+  const card    = document.querySelector(`[data-qid="${id}"]`);
+  if (!card) return;
+  const type    = card.querySelector('.q-type').value;
+  if (type !== 'Multiple Choice') return;
+
+  const optsTxt = card.querySelector('.q-options').value;
+  const opts    = optsTxt.split('\n').map(s => s.trim()).filter(Boolean);
+  const selEl   = card.querySelector('.q-correct-select');
+  const inpEl   = card.querySelector('.q-correct-input');
+  const current = preselect !== undefined ? preselect : selEl.value;
+
+  selEl.style.display = opts.length ? '' : 'none';
+  inpEl.style.display = opts.length ? 'none' : '';
+
+  selEl.innerHTML = '<option value="">— select correct answer —</option>' +
+    opts.map(o => `<option value="${esc(o)}" ${o === current ? 'selected' : ''}>${esc(o)}</option>`).join('');
+  if (opts.length) inpEl.value = selEl.value;
+}
+
+function syncCorrectInput(id) {
+  const card = document.querySelector(`[data-qid="${id}"]`);
+  if (!card) return;
+  card.querySelector('.q-correct-input').value = card.querySelector('.q-correct-select').value;
+}
+
+// ── SAVE QUIZ ─────────────────────────────────────────────────
+async function saveQuiz() {
+  const title  = document.getElementById('f-title').value.trim();
+  const active = document.getElementById('f-active').checked;
+  const notify = document.getElementById('f-notify').value.trim();
+
+  if (!title) { showFormError('Please enter a quiz title.'); return; }
+
+  const cards = document.querySelectorAll('.q-card');
+  if (!cards.length) { showFormError('Please add at least one question.'); return; }
+
+  const questions = [];
+  let valid = true;
+  cards.forEach((card, i) => {
+    const q       = card.querySelector('.q-question').value.trim();
+    const type    = card.querySelector('.q-type').value;
+    const opts    = card.querySelector('.q-options').value.trim();
+    const correct = card.querySelector('.q-correct-input').value.trim() ||
+                    card.querySelector('.q-correct-select').value.trim();
+    const points  = card.querySelector('.q-points').value || '1';
+
+    if (!q) { showFormError(`Question ${i+1} is missing text.`); valid = false; }
+    questions.push([q, type, opts, correct, points]);
+  });
+
+  if (!valid) return;
+
+  showFullLoading('Saving quiz...');
+  document.getElementById('form-error').style.display = 'none';
+
+  try {
+    const now = new Date().toLocaleDateString();
+
+    if (editingQuizId) {
+      // ── UPDATE existing quiz ──
+      const q = allQuizzes.find(x => x.id === editingQuizId);
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A${editingRowIndex}:E${editingRowIndex}?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        body: JSON.stringify({ values: [[editingQuizId, title, q.created || now, active ? 'TRUE' : 'FALSE', notify]] })
+      });
+      // Clear old questions (keep header)
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${editingQuizId}!A2:F1000:clear`, { method: 'POST', body: '{}' });
+      // Write new questions
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${editingQuizId}!A2?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        body: JSON.stringify({ values: questions })
+      });
+      showToast('Quiz updated!');
+    } else {
+      // ── CREATE new quiz ──
+      const newId = Math.random().toString(36).substr(2, 8);
+      // Add row to Quizzes tab
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+        method: 'POST',
+        body: JSON.stringify({ values: [[newId, title, now, active ? 'TRUE' : 'FALSE', notify]] })
+      });
+      // Create Q_ sheet
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}:batchUpdate`, {
+        method: 'POST',
+        body: JSON.stringify({ requests: [{ addSheet: { properties: { title: 'Q_' + newId } } }] })
+      });
+      // Add header + questions
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${newId}!A1?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        body: JSON.stringify({ values: [['Question','Type','Options','CorrectAnswer','Points'], ...questions] })
+      });
+      showToast('Quiz created!');
+    }
+
+    hideFullLoading();
+    showDashboard();
+  } catch (e) {
+    hideFullLoading();
+    showFormError('Save failed: ' + e.message);
+  }
+}
+
+// ── HELPERS ───────────────────────────────────────────────────
+async function apiFetch(url, opts = {}) {
+  const res = await fetch(url, {
+    ...opts,
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...(opts.headers || {}) }
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${res.status}`);
+  }
+  return res.json();
+}
+
+function showLoginError(msg) {
+  hideFullLoading();
+  const el = document.getElementById('login-error');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function showFormError(msg) {
+  const el = document.getElementById('form-error');
+  el.textContent = msg; el.style.display = 'block';
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function showFullLoading(msg) {
+  document.getElementById('loading-full-msg').textContent = msg || 'Loading...';
+  document.getElementById('loading-full').style.display = 'flex';
+}
+
+function hideFullLoading() {
+  document.getElementById('loading-full').style.display = 'none';
+}
+
+let toastTimer;
+function showToast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.background = isError ? '#c53030' : '#1a202c';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
