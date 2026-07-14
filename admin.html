@@ -510,7 +510,7 @@ function onTypeChange(id, forceType, correctVal) {
     selEl.style.display    = '';
     inpEl.style.display    = 'none';
     selEl.innerHTML = '<option value="">— select —</option><option value="True">True</option><option value="False">False</option>';
-    if (correctVal) selEl.value = correctVal;
+    if (correctVal) { selEl.value = correctVal; inpEl.value = correctVal; }
     else if (forceType) { /* keep blank */ }
   } else if (type === 'Short Text') {
     optWrap.style.display  = 'none';
@@ -569,8 +569,10 @@ async function saveQuiz() {
     const q       = card.querySelector('.q-question').value.trim();
     const type    = card.querySelector('.q-type').value;
     const opts    = card.querySelector('.q-options').value.trim();
-    const correct = card.querySelector('.q-correct-input').value.trim() ||
-                    card.querySelector('.q-correct-select').value.trim();
+    const correct = type === 'True/False'
+                    ? card.querySelector('.q-correct-select').value.trim()
+                    : card.querySelector('.q-correct-input').value.trim() ||
+                      card.querySelector('.q-correct-select').value.trim();
     const points  = card.querySelector('.q-points').value || '1';
 
     if (!q) { showFormError(`Question ${i+1} is missing text.`); valid = false; }
