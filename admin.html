@@ -582,6 +582,7 @@ async function saveQuiz() {
 
   if (!valid) return;
 
+  console.log('Questions to save:', JSON.stringify(questions));
   showFullLoading('Saving quiz...');
   document.getElementById('form-error').style.display = 'none';
 
