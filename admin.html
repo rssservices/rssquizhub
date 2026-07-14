@@ -575,6 +575,7 @@ async function saveQuiz() {
                       card.querySelector('.q-correct-select').value.trim();
     const points  = card.querySelector('.q-points').value || '1';
 
+    console.log(`Q${i+1}: type="${type}" correct="${correct}" selVal="${card.querySelector('.q-correct-select').value}" inpVal="${card.querySelector('.q-correct-input').value}"`);
     if (!q) { showFormError(`Question ${i+1} is missing text.`); valid = false; }
     questions.push([q, type, opts, correct, points]);
   });
