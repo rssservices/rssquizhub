@@ -90,6 +90,11 @@
     @media(max-width:560px){.q-row{grid-template-columns:1fr}}
     .add-q-btn{width:100%;padding:12px;border-radius:8px;border:2px dashed #c7d2fe;background:none;color:#4f46e5;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;margin-bottom:18px}
     .add-q-btn:hover{background:#f5f3ff;border-color:#4f46e5}
+    .add-btn-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .add-btn-row .add-q-btn{margin-bottom:0}
+    .s-card{background:#f5f3ff;border-color:#c7d2fe;border-left:4px solid #4f46e5}
+    .s-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#4f46e5}
+    .btn-xs:disabled{opacity:.35;cursor:not-allowed}
     .form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:4px}
     /* ── Misc ── */
     .loading-full{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;color:#718096}
@@ -178,6 +183,11 @@
           <input type="text" id="f-title" placeholder="e.g. Debriefing Quiz 2">
         </div>
         <div class="field">
+          <label>Instructions <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+          <textarea id="f-instructions" rows="4" placeholder="Shown to quiz takers before they start.&#10;e.g. Answer all questions. You have one attempt. Short Text answers are reviewed by your coach."></textarea>
+          <div class="field-hint">Line breaks are kept. Leave blank if not needed.</div>
+        </div>
+        <div class="field">
           <div class="toggle-row">
             <div>
               <label style="margin-bottom:2px">Active</label>
@@ -194,9 +204,13 @@
       </div>
 
       <div class="form-section">
-        <h3>Questions</h3>
+        <h3>Sections &amp; Questions</h3>
+        <div class="field-hint" style="margin:-8px 0 14px">Questions below a section belong to it. Use ↑ ↓ to reorder.</div>
         <div id="questions-list"></div>
-        <button class="add-q-btn" onclick="addQuestion()">+ Add Question</button>
+        <div class="add-btn-row">
+          <button class="add-q-btn" onclick="addSection()">+ Add Section</button>
+          <button class="add-q-btn" onclick="addQuestion()">+ Add Question</button>
+        </div>
       </div>
 
       <div id="form-error" class="error-box"></div>
@@ -284,19 +298,29 @@ async function initSheet() {
     });
     await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A1:E1?valueInputOption=USER_ENTERED`, {
       method: 'PUT',
-      body: JSON.stringify({ values: [['ID', 'Name', 'Created', 'Active', 'NotifyEmails']] })
+      body: JSON.stringify({ values: [['ID', 'Name', 'Created', 'Active', 'NotifyEmails', 'Instructions']] })
+    });
+    return;
+  }
+  // Older sheets: make sure the Instructions header (column F) exists
+  const hdr = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!F1`);
+  if (!hdr.values || !hdr.values[0] || !hdr.values[0][0]) {
+    await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!F1?valueInputOption=RAW`, {
+      method: 'PUT',
+      body: JSON.stringify({ values: [['Instructions']] })
     });
   }
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────
 async function loadDashboard() {
-  const data = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A:E`);
+  const data = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A:F`);
   const rows = (data.values || []).slice(1).filter(r => r[0]);
   allQuizzes = rows.map((r, i) => ({
     id:           r[0], name:    r[1], created: r[2],
     active:       String(r[3]).toUpperCase() === 'TRUE',
     notifyEmails: r[4] || '',
+    instructions: r[5] || '',
     rowIndex:     i + 2 // 1-based, accounting for header row
   }));
   renderDashboard();
@@ -381,6 +405,7 @@ function showCreateForm() {
   document.getElementById('f-title').value   = '';
   document.getElementById('f-active').checked = true;
   document.getElementById('f-notify').value  = '';
+  document.getElementById('f-instructions').value = '';
   document.getElementById('questions-list').innerHTML = '';
   document.getElementById('form-error').style.display = 'none';
   addQuestion(); // start with one blank question
@@ -405,18 +430,26 @@ async function editQuiz(quizId) {
     document.getElementById('f-title').value           = q.name || '';
     document.getElementById('f-active').checked        = q.active;
     document.getElementById('f-notify').value          = q.notifyEmails || '';
+    document.getElementById('f-instructions').value    = q.instructions || '';
     document.getElementById('questions-list').innerHTML = '';
     document.getElementById('form-error').style.display = 'none';
 
-    qRows.forEach(r => addQuestion({
-      question:      r[0] || '',
-      type:          r[1] || 'Multiple Choice',
-      options:       r[2] || '',
-      correctAnswer: r[3] || '',
-      points:        r[4] || '1'
-    }));
+    qRows.forEach(r => {
+      if (String(r[1] || '').trim().toLowerCase() === 'section') {
+        addSection({ title: r[0] || '', instructions: r[2] || '' });
+      } else {
+        addQuestion({
+          question:      r[0] || '',
+          type:          r[1] || 'Multiple Choice',
+          options:       r[2] || '',
+          correctAnswer: r[3] || '',
+          points:        r[4] || '1'
+        });
+      }
+    });
 
     if (!qRows.length) addQuestion();
+    updateMoveButtons();
     hideFullLoading();
     document.getElementById('view-dashboard').style.display = 'none';
     document.getElementById('view-form').style.display = '';
@@ -438,10 +471,12 @@ function addQuestion(data = {}) {
   const div = document.createElement('div');
   div.className = 'q-card';
   div.dataset.qid = id;
+  div.dataset.kind = 'question';
   div.innerHTML = `
     <div class="q-card-header">
       <span class="q-num">${num}</span>
       <div class="q-card-header-right">
+        ${moveButtonsHtml(id)}
         <button class="btn-xs danger" onclick="removeQuestion(${id})">✕ Remove</button>
       </div>
     </div>
@@ -482,16 +517,79 @@ function addQuestion(data = {}) {
   // Initialize options/correct fields based on type
   if (data.options) updateCorrectSelect(id, data.correctAnswer || '');
   onTypeChange(id, type, data.correctAnswer);
+  updateMoveButtons();
+}
+
+// ── SECTION BUILDER ───────────────────────────────────────────
+function addSection(data = {}) {
+  const id   = ++qCounter;
+  const list = document.getElementById('questions-list');
+
+  const div = document.createElement('div');
+  div.className = 'q-card s-card';
+  div.dataset.qid = id;
+  div.dataset.kind = 'section';
+  div.innerHTML = `
+    <div class="q-card-header">
+      <span class="s-label">Section</span>
+      <div class="q-card-header-right">
+        ${moveButtonsHtml(id)}
+        <button class="btn-xs danger" onclick="removeQuestion(${id})">✕ Remove</button>
+      </div>
+    </div>
+    <div class="q-fields">
+      <div class="field">
+        <label>Section Title</label>
+        <input type="text" class="s-title" placeholder="e.g. Part 1 – Active Listening" value="${esc(data.title || '')}">
+      </div>
+      <div class="field">
+        <label>Section Instructions <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+        <textarea class="s-instructions" rows="3" placeholder="Shown above every question in this section.">${esc(data.instructions || '')}</textarea>
+      </div>
+    </div>`;
+
+  list.appendChild(div);
+  renumberQuestions();
+  updateMoveButtons();
+}
+
+// ── REORDER ───────────────────────────────────────────────────
+function moveButtonsHtml(id) {
+  return `<button class="btn-xs move-up" title="Move up" onclick="moveCard(${id}, -1)">↑</button>
+          <button class="btn-xs move-down" title="Move down" onclick="moveCard(${id}, 1)">↓</button>`;
+}
+
+function moveCard(id, dir) {
+  const el = document.querySelector(`[data-qid="${id}"]`);
+  if (!el) return;
+  if (dir < 0 && el.previousElementSibling) {
+    el.parentNode.insertBefore(el, el.previousElementSibling);
+  } else if (dir > 0 && el.nextElementSibling) {
+    el.parentNode.insertBefore(el.nextElementSibling, el);
+  }
+  renumberQuestions();
+  updateMoveButtons();
+}
+
+function updateMoveButtons() {
+  const cards = document.querySelectorAll('#questions-list .q-card');
+  cards.forEach((card, i) => {
+    const up = card.querySelector('.move-up'), down = card.querySelector('.move-down');
+    if (up)   up.disabled   = i === 0;
+    if (down) down.disabled = i === cards.length - 1;
+  });
 }
 
 function removeQuestion(id) {
   const el = document.querySelector(`[data-qid="${id}"]`);
   if (el) el.remove();
   renumberQuestions();
+  updateMoveButtons();
 }
 
+// Only question cards get numbers; section cards are skipped
 function renumberQuestions() {
-  document.querySelectorAll('.q-card').forEach((card, i) => {
+  document.querySelectorAll('#questions-list .q-card[data-kind="question"]').forEach((card, i) => {
     card.querySelector('.q-num').textContent = i + 1;
   });
 }
@@ -562,15 +660,33 @@ async function saveQuiz() {
   const title  = document.getElementById('f-title').value.trim();
   const active = document.getElementById('f-active').checked;
   const notify = document.getElementById('f-notify').value.trim();
+  const instructions = document.getElementById('f-instructions').value.trim();
 
   if (!title) { showFormError('Please enter a quiz title.'); return; }
 
-  const cards = document.querySelectorAll('.q-card');
-  if (!cards.length) { showFormError('Please add at least one question.'); return; }
+  const cards = document.querySelectorAll('#questions-list .q-card');
+  if (!document.querySelectorAll('#questions-list .q-card[data-kind="question"]').length) {
+    showFormError('Please add at least one question.'); return;
+  }
 
+  // Rows written to the Q_ tab, in on-screen order.
+  // Section rows: [title, 'Section', instructions, '', '']
   const questions = [];
-  let valid = true;
-  cards.forEach((card, i) => {
+  let valid = true, qNum = 0, sNum = 0;
+  cards.forEach(card => {
+    if (!valid) return;
+
+    if (card.dataset.kind === 'section') {
+      sNum++;
+      const sTitle = card.querySelector('.s-title').value.trim();
+      const sInstr = card.querySelector('.s-instructions').value.trim();
+      if (!sTitle) { showFormError(`Section ${sNum} is missing a title.`); valid = false; return; }
+      questions.push([sTitle, 'Section', sInstr, '', '']);
+      return;
+    }
+
+    qNum++;
+    const i       = qNum - 1;
     const q       = card.querySelector('.q-question').value.trim();
     const type    = card.querySelector('.q-type').value;
     const opts    = card.querySelector('.q-options').value.trim();
@@ -583,14 +699,13 @@ async function saveQuiz() {
                       card.querySelector('.q-correct-select').value.trim();
     const points  = card.querySelector('.q-points').value || '1';
 
-    console.log(`Q${i+1}: type="${type}" correct="${correct}" selVal="${card.querySelector('.q-correct-select').value}" inpVal="${card.querySelector('.q-correct-input').value}"`);
-    if (!q) { showFormError(`Question ${i+1} is missing text.`); valid = false; }
-    questions.push([q, type, opts, correct, points]);
+    if (!q) { showFormError(`Question ${i+1} is missing text.`); valid = false; return; }
+    // Options only apply to Multiple Choice
+    questions.push([q, type, type === 'Multiple Choice' ? opts : '', correct, points]);
   });
 
   if (!valid) return;
 
-  console.log('Questions to save:', JSON.stringify(questions));
   showFullLoading('Saving quiz...');
   document.getElementById('form-error').style.display = 'none';
 
@@ -600,14 +715,14 @@ async function saveQuiz() {
     if (editingQuizId) {
       // ── UPDATE existing quiz ──
       const q = allQuizzes.find(x => x.id === editingQuizId);
-      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A${editingRowIndex}:E${editingRowIndex}?valueInputOption=USER_ENTERED`, {
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A${editingRowIndex}:F${editingRowIndex}?valueInputOption=RAW`, {
         method: 'PUT',
-        body: JSON.stringify({ values: [[editingQuizId, title, q.created || now, active ? 'TRUE' : 'FALSE', notify]] })
+        body: JSON.stringify({ values: [[editingQuizId, title, q.created || now, active ? 'TRUE' : 'FALSE', notify, instructions]] })
       });
       // Clear old questions (keep header)
       await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${editingQuizId}!A2:F1000:clear`, { method: 'POST', body: '{}' });
-      // Write new questions
-      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${editingQuizId}!A2?valueInputOption=USER_ENTERED`, {
+      // Write new questions (RAW so text is stored exactly as typed)
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${editingQuizId}!A2?valueInputOption=RAW`, {
         method: 'PUT',
         body: JSON.stringify({ values: questions })
       });
@@ -616,9 +731,9 @@ async function saveQuiz() {
       // ── CREATE new quiz ──
       const newId = Math.random().toString(36).substr(2, 8);
       // Add row to Quizzes tab
-      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
         method: 'POST',
-        body: JSON.stringify({ values: [[newId, title, now, active ? 'TRUE' : 'FALSE', notify]] })
+        body: JSON.stringify({ values: [[newId, title, now, active ? 'TRUE' : 'FALSE', notify, instructions]] })
       });
       // Create Q_ sheet
       await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}:batchUpdate`, {
@@ -626,7 +741,7 @@ async function saveQuiz() {
         body: JSON.stringify({ requests: [{ addSheet: { properties: { title: 'Q_' + newId } } }] })
       });
       // Add header + questions
-      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${newId}!A1?valueInputOption=USER_ENTERED`, {
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${newId}!A1?valueInputOption=RAW`, {
         method: 'PUT',
         body: JSON.stringify({ values: [['Question','Type','Options','CorrectAnswer','Points'], ...questions] })
       });
