@@ -60,6 +60,12 @@
     .info-note{background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:12px 14px;color:#1e40af;font-size:13px;margin-top:14px}
     .subtitle{font-size:14px;color:#718096;margin-top:6px}
     .quiz-title{font-size:1.1rem;font-weight:700;color:#4f46e5;margin-bottom:20px;padding-bottom:14px;border-bottom:1.5px solid #e2e8f0}
+    .instructions-box{background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:8px;padding:14px 16px;margin-top:18px;font-size:14px;color:#3730a3;line-height:1.6;white-space:pre-wrap}
+    .instructions-box strong{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#6d28d9;margin-bottom:6px;white-space:normal}
+    .section-banner{background:#f5f3ff;border-left:4px solid #4f46e5;border-radius:6px;padding:12px 14px;margin-bottom:20px}
+    .section-banner-title{font-weight:700;font-size:14px;color:#4f46e5}
+    .section-banner-text{font-size:13px;color:#4a5568;line-height:1.55;margin-top:4px;white-space:pre-wrap}
+    .review-section-title{font-size:13px;font-weight:700;color:#4f46e5;margin:18px 0 8px}
   </style>
 </head>
 <body>
@@ -72,6 +78,7 @@
     </div>
     <h1>PathToLeadership</h1>
     <p class="subtitle" id="quiz-subtitle">Loading quiz...</p>
+    <div class="instructions-box" id="quiz-instructions" style="display:none"></div>
     <p style="margin-top:16px">Please enter your details below to begin.</p>
     <div style="margin-top:24px">
       <div class="field">
@@ -160,6 +167,11 @@ window.addEventListener('load', async () => {
     if (quizData.error) throw new Error(quizData.error);
 
     document.getElementById('quiz-subtitle').textContent = quizData.name;
+    if (quizData.instructions && quizData.instructions.trim()) {
+      const box = document.getElementById('quiz-instructions');
+      box.innerHTML = `<strong>Instructions</strong>${esc(quizData.instructions.trim())}`;
+      box.style.display = '';
+    }
     showScreen('screen-info');
   } catch (e) {
     showScreen('screen-info');
@@ -196,7 +208,15 @@ function renderQuestion() {
   document.getElementById('progress-fill').style.width = ((currentIndex / total) * 100) + '%';
 
   const type = (q.type || '').toLowerCase();
-  let html = `<div class="question-text">${esc(q.question)}</div>`;
+  let html = '';
+  if (q.section) {
+    html += `<div class="section-banner">
+      <div class="section-banner-title">${esc(q.section.title)}</div>
+      ${q.section.instructions && q.section.instructions.trim()
+        ? `<div class="section-banner-text">${esc(q.section.instructions.trim())}</div>` : ''}
+    </div>`;
+  }
+  html += `<div class="question-text">${esc(q.question)}</div>`;
 
   if (type.includes('multiple') || type.includes('mc') || type.includes('choice')) {
     html += `<ul class="options-list">`;
@@ -293,9 +313,16 @@ function showResults(result) {
     pct >= 60    ? '👍 Good effort!'   : '📚 Keep studying!';
 
   let html = '';
+  let lastSection = null;
   quizData.questions.forEach((q, i) => {
     const userAns  = answers[i] || '';
     const isCorrect = results ? results[i] : null;
+
+    const secTitle = q.section ? q.section.title : null;
+    if (secTitle && secTitle !== lastSection) {
+      html += `<div class="review-section-title">${esc(secTitle)}</div>`;
+    }
+    lastSection = secTitle;
 
     if (isCorrect === null) {
       html += `<div class="answer-item answer-open">
