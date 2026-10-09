@@ -156,6 +156,9 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbya2DbPdqL4MDXvbAB2k
 
 let quizId, quizData, answers, currentIndex;
 let takerName, takerEmail;
+// The path actually taken through the form, as question indexes. Drives the
+// Back button and tells the backend which questions this taker was shown.
+let visited = [];
 
 // ── INIT ──────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
@@ -208,7 +211,13 @@ function startQuiz() {
   }
 
   answers      = new Array(quizData.questions.length).fill(null);
-  currentIndex = 0;
+  // The first question may itself be behind a condition.
+  currentIndex = nextVisibleFrom(0);
+  if (currentIndex === -1) {
+    showError('info-error', 'This form has no questions to show.');
+    return;
+  }
+  visited      = [currentIndex];
   document.getElementById('quiz-title-bar').textContent = quizData.name;
   showScreen('screen-quiz');
   renderQuestion();
@@ -220,7 +229,16 @@ function renderQuestion() {
   const total = quizData.questions.length;
   const saved = answers[currentIndex];
 
-  document.getElementById('progress-label').textContent = `Question ${currentIndex + 1} of ${total}`;
+  // With branching the remaining question count isn't known ahead of time,
+  // so don't claim a total that may not hold. The bar still tracks position
+  // in the form as a rough indicator.
+  const branching = quizData.questions.some(x =>
+    (x.condition && x.condition.qid) ||
+    (Array.isArray(x.jump) && x.jump.length) ||
+    (x.section && x.section.condition && x.section.condition.qid));
+  document.getElementById('progress-label').textContent = branching
+    ? `Question ${visited.length}`
+    : `Question ${currentIndex + 1} of ${total}`;
   document.getElementById('progress-fill').style.width = ((currentIndex / total) * 100) + '%';
 
   const type = (q.type || '').toLowerCase();
@@ -242,7 +260,7 @@ function renderQuestion() {
   if (type === 'checkboxes' || type.includes('checkbox')) {
     // Multi-select. Stored as a comma-joined string so it reads cleanly in
     // the sheet; the backend compares it as an order-insensitive set.
-    const chosen = String(saved || '').split(',').map(s => s.trim()).filter(Boolean);
+    const chosen = splitMulti(saved);
     html += `<ul class="options-list">`;
     (q.options || []).forEach(opt => {
       const chk = chosen.indexOf(opt) !== -1 ? 'checked' : '';
@@ -302,8 +320,11 @@ function renderQuestion() {
   }
 
   document.getElementById('question-card').innerHTML = html;
-  document.getElementById('btn-next').textContent   = currentIndex === total - 1 ? 'Submit Quiz ✓' : 'Next →';
-  document.getElementById('btn-back').style.visibility = currentIndex === 0 ? 'hidden' : 'visible';
+  // "Last question" is whether anything visible follows, not whether this is
+  // the last row in the list — a jump can end the form early.
+  const isLast = nextVisibleFrom(currentIndex + 1) === -1;
+  document.getElementById('btn-next').textContent   = isLast ? 'Submit ✓' : 'Next →';
+  document.getElementById('btn-back').style.visibility = visited.length < 2 ? 'hidden' : 'visible';
   document.getElementById('quiz-error').style.display  = 'none';
 }
 
@@ -316,12 +337,89 @@ function imageHtml(url, alt) {
 
 function saveAnswer(val) { answers[currentIndex] = val; }
 
-// Collects every ticked box in the current question into one comma-joined
-// value, keeping the order the options were shown in.
+// Checkbox answers hold several values in one cell, joined with a pipe
+// rather than a comma — option text often contains commas, and a
+// comma-joined value can't be split back apart reliably. Reading accepts
+// both, so responses recorded before this change still parse.
+const MULTI_SEP = ' | ';
+
+function splitMulti(raw) {
+  const s = String(raw == null ? '' : raw);
+  const parts = s.indexOf('|') !== -1 ? s.split('|') : s.split(',');
+  return parts.map(x => x.trim()).filter(Boolean);
+}
+
+// Collects every ticked box in the current question, keeping the order the
+// options were shown in.
 function saveCheckbox() {
   const boxes = document.querySelectorAll('#question-card input[type="checkbox"]');
   const picked = Array.from(boxes).filter(b => b.checked).map(b => b.value);
-  answers[currentIndex] = picked.join(', ');
+  answers[currentIndex] = picked.join(MULTI_SEP);
+}
+
+// ── CONDITIONAL LOGIC ─────────────────────────────────────────
+// Answers are held by position; conditions reference questions by id.
+function answerFor(qid) {
+  const i = quizData.questions.findIndex(q => (q.qid || '') === qid);
+  return i === -1 ? '' : (answers[i] == null ? '' : String(answers[i]));
+}
+
+// A condition is {qid, op, value}. Anything malformed or referencing an
+// unknown question is treated as "no condition" — a broken rule must not
+// silently hide a question.
+function conditionMet(cond) {
+  if (!cond || !cond.qid || !cond.op) return true;
+  const given = answerFor(cond.qid).trim().toLowerCase();
+  const want  = String(cond.value == null ? '' : cond.value).trim().toLowerCase();
+  const list  = want.split(',').map(s => s.trim()).filter(Boolean);
+  // Checkbox answers arrive comma-joined.
+  const parts = given.split(',').map(s => s.trim()).filter(Boolean);
+
+  switch (cond.op) {
+    case 'is':       return given === want;
+    case 'is_not':   return given !== want;
+    case 'includes': return parts.indexOf(want) !== -1;
+    case 'any_of':   return list.some(v => given === v || parts.indexOf(v) !== -1);
+    default:         return true;
+  }
+}
+
+// A question shows only if its own rule passes and its section's rule does.
+function isVisible(i) {
+  const q = quizData.questions[i];
+  if (!q) return false;
+  if (q.section && !conditionMet(q.section.condition)) return false;
+  return conditionMet(q.condition);
+}
+
+// First question of a section, by section id.
+function sectionStart(sectionQid) {
+  return quizData.questions.findIndex(q => q.section && q.section.qid === sectionQid);
+}
+
+// Jump rules are [{value, to}]; `to` is a section id or 'END'. '*' matches
+// any answer and acts as the fallback.
+function jumpTarget(q, answer) {
+  const rules = Array.isArray(q.jump) ? q.jump : null;
+  if (!rules || !rules.length) return null;
+  const given = String(answer == null ? '' : answer).trim().toLowerCase();
+  let wildcard = null;
+  for (const r of rules) {
+    if (!r || !r.to) continue;
+    const v = String(r.value == null ? '' : r.value).trim().toLowerCase();
+    if (v === '*') { wildcard = r.to; continue; }
+    if (v === given) return r.to;
+  }
+  return wildcard;
+}
+
+// Walks forward from `from` to the next question the taker should see.
+// Returns -1 when the form is finished.
+function nextVisibleFrom(from) {
+  for (let i = from; i < quizData.questions.length; i++) {
+    if (isVisible(i)) return i;
+  }
+  return -1;
 }
 
 function nextOrSubmit() {
@@ -333,16 +431,34 @@ function nextOrSubmit() {
     showError('quiz-error', 'Please answer this question before continuing.');
     return;
   }
-  if (currentIndex < quizData.questions.length - 1) {
-    currentIndex++;
-    renderQuestion();
+
+  // A matching jump rule overrides simply moving to the next question.
+  let target = -1;
+  const jump = jumpTarget(q, ans);
+  if (jump === 'END') {
+    submitQuiz(); return;
+  } else if (jump) {
+    const start = sectionStart(jump);
+    target = start === -1 ? currentIndex + 1 : start;
   } else {
-    submitQuiz();
+    target = currentIndex + 1;
   }
+
+  const next = nextVisibleFrom(target);
+  if (next === -1) { submitQuiz(); return; }
+
+  visited.push(next);
+  currentIndex = next;
+  renderQuestion();
 }
 
+// Back retraces the path actually taken, which with branching is not
+// simply the previous index.
 function prevQuestion() {
-  if (currentIndex > 0) { currentIndex--; renderQuestion(); }
+  if (visited.length < 2) return;
+  visited.pop();
+  currentIndex = visited[visited.length - 1];
+  renderQuestion();
 }
 
 // ── SUBMIT ────────────────────────────────────────────────────
@@ -356,12 +472,17 @@ async function submitQuiz() {
     // and `seen` records what this taker was actually shown, so the backend
     // can store and score without relying on column position.
     const answersByQid = {};
-    const seen = [];
     quizData.questions.forEach((q, i) => {
       const qid = q.qid || ('p' + (i + 1));
       answersByQid[qid] = answers[i] == null ? '' : answers[i];
-      seen.push(qid);
     });
+    // Only the questions this taker actually saw. Branching means that is
+    // not the whole list — the backend marks the rest as skipped and leaves
+    // them out of the score.
+    const seen = visited.map(i => {
+      const q = quizData.questions[i];
+      return (q && q.qid) || ('p' + (i + 1));
+    }).filter((v, i, a) => a.indexOf(v) === i);
 
     const res = await fetch(SCRIPT_URL, {
       method:  'POST',
@@ -416,7 +537,10 @@ function showResults(result) {
 
   let html = '';
   let lastSection = null;
+  const wasSeen = new Set(visited);
   quizData.questions.forEach((q, i) => {
+    // Don't review questions this taker was never shown.
+    if (!wasSeen.has(i)) return;
     const userAns  = answers[i] == null || String(answers[i]).trim() === ''
                      ? '(no answer)' : answers[i];
     const isCorrect = isSurvey ? null : (results ? results[i] : null);
