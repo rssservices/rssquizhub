@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RSS Quiz Hub – Admin</title>
+  <title>RSS Forms – Admin</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;min-height:100vh;color:#1a202c}
@@ -114,7 +114,7 @@
     <div class="logo">
       <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
     </div>
-    <h1>RSS Quiz Hub</h1>
+    <h1>RSS Forms</h1>
     <p class="subtitle">Quiz Admin Panel</p>
     <p style="margin-top:14px;font-size:14px;color:#4a5568">Sign in with your Google account to manage quizzes.</p>
     <button class="btn-google" onclick="signIn()">
@@ -143,7 +143,7 @@
       <div class="topbar-logo">
         <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
       </div>
-      RSS Quiz Hub
+      RSS Forms
       <span class="topbar-badge">Admin</span>
     </div>
     <div class="topbar-right">
@@ -179,8 +179,16 @@
       <div class="form-section">
         <h3>Quiz Details</h3>
         <div class="field">
-          <label>Quiz Title</label>
+          <label>Title</label>
           <input type="text" id="f-title" placeholder="e.g. Debriefing Quiz 2">
+        </div>
+        <div class="field">
+          <label>Form Type</label>
+          <select id="f-mode" onchange="onModeChange()">
+            <option value="Quiz">Quiz — scored, syncs to ClickUp</option>
+            <option value="Survey">Survey — not scored, no ClickUp task</option>
+          </select>
+          <div class="field-hint" id="mode-hint">Quizzes are graded and each submission creates a ClickUp task.</div>
         </div>
         <div class="field">
           <label>Instructions <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
@@ -236,6 +244,12 @@ const CLIENT_ID  = '445306017631-i2rid20egibb0srt9n24ot42flgr6v24.apps.googleuse
 const SHEET_ID   = '1zQouTLEmbuqNX_SuI_nvqmJFKV7juWAonRyK2gMTZDM';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbya2DbPdqL4MDXvbAB2k6lDlV9yev3r8mtWtZNxv528F_C3OyxAtT51ADiyytYYTkiWDQ/exec';
 const SCOPES     = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid';
+
+// Sheet schema. v2 added stable question IDs, Required, Mode (Quiz/Survey)
+// and reserved columns for images and conditional logic.
+const SCHEMA_VERSION = 2;
+const Q_HEADER = ['Question','Type','Options','CorrectAnswer','Points',
+                  'QID','ImageURL','Required','Condition','Jump','Config'];
 // ─────────────────────────────────────────────────────────────
 
 let tokenClient, accessToken, currentUser;
@@ -296,31 +310,35 @@ async function initSheet() {
       method: 'POST',
       body: JSON.stringify({ requests: [{ addSheet: { properties: { title: 'Quizzes' } } }] })
     });
-    await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A1:E1?valueInputOption=USER_ENTERED`, {
+    await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A1:H1?valueInputOption=USER_ENTERED`, {
       method: 'PUT',
-      body: JSON.stringify({ values: [['ID', 'Name', 'Created', 'Active', 'NotifyEmails', 'Instructions']] })
+      body: JSON.stringify({ values: [['ID', 'Name', 'Created', 'Active', 'NotifyEmails', 'Instructions', 'Mode', 'SchemaVersion']] })
     });
     return;
   }
-  // Older sheets: make sure the Instructions header (column F) exists
-  const hdr = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!F1`);
-  if (!hdr.values || !hdr.values[0] || !hdr.values[0][0]) {
-    await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!F1?valueInputOption=RAW`, {
+  // Older sheets: make sure the headers added after launch exist.
+  // F Instructions (v1.1), G Mode + H SchemaVersion (v2).
+  const hdr = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!F1:H1`);
+  const row = (hdr.values && hdr.values[0]) || [];
+  if (!row[0] || !row[1] || !row[2]) {
+    await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!F1:H1?valueInputOption=RAW`, {
       method: 'PUT',
-      body: JSON.stringify({ values: [['Instructions']] })
+      body: JSON.stringify({ values: [[row[0] || 'Instructions', row[1] || 'Mode', row[2] || 'SchemaVersion']] })
     });
   }
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────
 async function loadDashboard() {
-  const data = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A:F`);
+  const data = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A:H`);
   const rows = (data.values || []).slice(1).filter(r => r[0]);
   allQuizzes = rows.map((r, i) => ({
     id:           r[0], name:    r[1], created: r[2],
     active:       String(r[3]).toUpperCase() === 'TRUE',
     notifyEmails: r[4] || '',
     instructions: r[5] || '',
+    mode:         (r[6] || 'Quiz').trim() === 'Survey' ? 'Survey' : 'Quiz',
+    schema:       parseInt(r[7]) || 1,
     rowIndex:     i + 2 // 1-based, accounting for header row
   }));
   renderDashboard();
@@ -349,7 +367,8 @@ async function renderDashboard() {
       <div class="quiz-card-top">
         <div>
           <div class="quiz-card-title">${esc(q.name)}</div>
-          <div class="quiz-meta">Created ${esc(q.created || '—')} &nbsp;·&nbsp;
+          <div class="quiz-meta">${q.mode === 'Survey' ? 'Survey' : 'Quiz'} &nbsp;·&nbsp;
+            Created ${esc(q.created || '—')} &nbsp;·&nbsp;
             <span class="responses-count">${counts[i]} response${counts[i] !== 1 ? 's' : ''}</span>
           </div>
         </div>
@@ -401,13 +420,15 @@ function showDashboard() {
 // ── FORM: CREATE ──────────────────────────────────────────────
 function showCreateForm() {
   editingQuizId = null; editingRowIndex = null;
-  document.getElementById('form-title').textContent = 'Create New Quiz';
+  document.getElementById('form-title').textContent = 'Create New Form';
   document.getElementById('f-title').value   = '';
   document.getElementById('f-active').checked = true;
   document.getElementById('f-notify').value  = '';
   document.getElementById('f-instructions').value = '';
+  document.getElementById('f-mode').value    = 'Quiz';
   document.getElementById('questions-list').innerHTML = '';
   document.getElementById('form-error').style.display = 'none';
+  onModeChange();
   addQuestion(); // start with one blank question
   document.getElementById('view-dashboard').style.display = 'none';
   document.getElementById('view-form').style.display = '';
@@ -423,33 +444,54 @@ async function editQuiz(quizId) {
     editingRowIndex = q.rowIndex;
 
     // Load questions
-    const data = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${quizId}!A:E`);
+    const data = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${quizId}!A:K`);
     const qRows = (data.values || []).slice(1).filter(r => r[0]);
 
-    document.getElementById('form-title').textContent  = 'Edit Quiz';
+    document.getElementById('form-title').textContent  = q.mode === 'Survey' ? 'Edit Survey' : 'Edit Quiz';
     document.getElementById('f-title').value           = q.name || '';
     document.getElementById('f-active').checked        = q.active;
     document.getElementById('f-notify').value          = q.notifyEmails || '';
     document.getElementById('f-instructions').value    = q.instructions || '';
+    document.getElementById('f-mode').value            = q.mode || 'Quiz';
     document.getElementById('questions-list').innerHTML = '';
     document.getElementById('form-error').style.display = 'none';
 
     qRows.forEach(r => {
       if (String(r[1] || '').trim().toLowerCase() === 'section') {
-        addSection({ title: r[0] || '', instructions: r[2] || '' });
+        addSection({
+          title:        r[0] || '',
+          instructions: r[2] || '',
+          stableId:     r[5] || ''   // blank on legacy rows → a new id is minted
+        });
       } else {
         addQuestion({
           question:      r[0] || '',
           type:          r[1] || 'Multiple Choice',
           options:       r[2] || '',
           correctAnswer: r[3] || '',
-          points:        r[4] || '1'
+          points:        r[4] || '1',
+          stableId:      r[5] || '',
+          required:      String(r[7] || '').toUpperCase() !== 'FALSE'
         });
       }
     });
 
     if (!qRows.length) addQuestion();
     updateMoveButtons();
+    onModeChange();
+
+    // A legacy quiz that already has responses will be migrated to the new
+    // column layout on save. Warn before that happens, not after.
+    if ((q.schema || 1) < SCHEMA_VERSION) {
+      const count = await getResponseCount(quizId);
+      if (count > 0) {
+        showFormError(
+          `Heads up: this quiz is on the old format and already has ${count} response` +
+          `${count !== 1 ? 's' : ''}. Saving upgrades it — existing rows in the R_ tab are left exactly as they are, ` +
+          `and new submissions are written to ID-matched columns. Don't delete or reorder questions in this save if you want old rows to stay readable.`
+        );
+      }
+    }
     hideFullLoading();
     document.getElementById('view-dashboard').style.display = 'none';
     document.getElementById('view-form').style.display = '';
@@ -460,7 +502,33 @@ async function editQuiz(quizId) {
   }
 }
 
+// ── FORM MODE (Quiz vs Survey) ────────────────────────────────
+function isSurveyMode() {
+  const el = document.getElementById('f-mode');
+  return !!el && el.value === 'Survey';
+}
+
+// Surveys aren't scored, so Points and Correct Answer are meaningless —
+// hide them rather than leaving dead fields on screen.
+function onModeChange() {
+  const survey = isSurveyMode();
+  document.getElementById('mode-hint').textContent = survey
+    ? 'Survey responses are saved and emailed, but not scored and not sent to ClickUp.'
+    : 'Quizzes are graded and each submission creates a ClickUp task.';
+  document.querySelectorAll('#questions-list .q-card[data-kind="question"]').forEach(card => {
+    const pts = card.querySelector('.q-points-wrap');
+    if (pts) pts.style.display = survey ? 'none' : '';
+    const cor = card.querySelector('.q-correct-wrap');
+    if (cor) cor.style.display = survey ? 'none' : '';
+  });
+}
+
 // ── QUESTION BUILDER ──────────────────────────────────────────
+// Short, collision-resistant id — readable in the sheet and in R_ headers.
+function newStableId(prefix) {
+  return prefix + '_' + Math.random().toString(36).substr(2, 6);
+}
+
 let qCounter = 0;
 function addQuestion(data = {}) {
   const id   = ++qCounter;
@@ -472,6 +540,9 @@ function addQuestion(data = {}) {
   div.className = 'q-card';
   div.dataset.qid = id;
   div.dataset.kind = 'question';
+  // Stable id written to the sheet. Kept across edits so responses, and
+  // later the conditional rules, keep pointing at the right question.
+  div.dataset.stableId = data.stableId || newStableId('q');
   div.innerHTML = `
     <div class="q-card-header">
       <span class="q-num">${num}</span>
@@ -491,12 +562,21 @@ function addQuestion(data = {}) {
           <select class="q-type" onchange="onTypeChange(${id})">
             <option value="Multiple Choice"  ${type==='Multiple Choice'?'selected':''}>Multiple Choice</option>
             <option value="True/False"       ${type==='True/False'||type==='TF'?'selected':''}>True / False</option>
-            <option value="Short Text"       ${type==='Short Text'||type.includes('text')||type.includes('short')?'selected':''}>Short Text (Open-ended)</option>
+            <option value="Short Text"       ${type==='Short Text'||type.toLowerCase().includes('text')||type.toLowerCase().includes('short')?'selected':''}>Short Text (Open-ended)</option>
           </select>
         </div>
-        <div class="field">
+        <div class="field q-points-wrap">
           <label>Points</label>
           <input type="number" class="q-points" value="${esc(data.points || '1')}" min="0" max="100">
+        </div>
+      </div>
+      <div class="field">
+        <div class="toggle-row">
+          <div>
+            <label style="margin-bottom:2px">Required</label>
+            <div class="field-hint" style="margin:0">Takers cannot continue past this question without answering</div>
+          </div>
+          <label class="toggle"><input type="checkbox" class="q-required" ${data.required === false ? '' : 'checked'}><span class="slider"></span></label>
         </div>
       </div>
       <div class="q-options-wrap field">
@@ -518,6 +598,7 @@ function addQuestion(data = {}) {
   if (data.options) updateCorrectSelect(id, data.correctAnswer || '');
   onTypeChange(id, type, data.correctAnswer);
   updateMoveButtons();
+  onModeChange(); // a new card must respect the current Quiz/Survey mode
 }
 
 // ── SECTION BUILDER ───────────────────────────────────────────
@@ -529,6 +610,7 @@ function addSection(data = {}) {
   div.className = 'q-card s-card';
   div.dataset.qid = id;
   div.dataset.kind = 'section';
+  div.dataset.stableId = data.stableId || newStableId('s');
   div.innerHTML = `
     <div class="q-card-header">
       <span class="s-label">Section</span>
@@ -661,27 +743,32 @@ async function saveQuiz() {
   const active = document.getElementById('f-active').checked;
   const notify = document.getElementById('f-notify').value.trim();
   const instructions = document.getElementById('f-instructions').value.trim();
+  const mode   = document.getElementById('f-mode').value;
+  const survey = mode === 'Survey';
 
-  if (!title) { showFormError('Please enter a quiz title.'); return; }
+  if (!title) { showFormError('Please enter a title.'); return; }
 
   const cards = document.querySelectorAll('#questions-list .q-card');
   if (!document.querySelectorAll('#questions-list .q-card[data-kind="question"]').length) {
     showFormError('Please add at least one question.'); return;
   }
 
-  // Rows written to the Q_ tab, in on-screen order.
-  // Section rows: [title, 'Section', instructions, '', '']
+  // Rows written to the Q_ tab, in on-screen order. Schema v2 columns:
+  // A Question | B Type | C Options | D CorrectAnswer | E Points
+  // F QID | G ImageURL | H Required | I Condition | J Jump | K Config
+  // G–K are reserved for later phases and written blank for now.
   const questions = [];
   let valid = true, qNum = 0, sNum = 0;
   cards.forEach(card => {
     if (!valid) return;
+    const stableId = card.dataset.stableId;
 
     if (card.dataset.kind === 'section') {
       sNum++;
       const sTitle = card.querySelector('.s-title').value.trim();
       const sInstr = card.querySelector('.s-instructions').value.trim();
       if (!sTitle) { showFormError(`Section ${sNum} is missing a title.`); valid = false; return; }
-      questions.push([sTitle, 'Section', sInstr, '', '']);
+      questions.push([sTitle, 'Section', sInstr, '', '', stableId, '', '', '', '', '']);
       return;
     }
 
@@ -698,10 +785,19 @@ async function saveQuiz() {
                     : card.querySelector('.q-correct-input').value.trim() ||
                       card.querySelector('.q-correct-select').value.trim();
     const points  = card.querySelector('.q-points').value || '1';
+    const required = card.querySelector('.q-required').checked;
 
     if (!q) { showFormError(`Question ${i+1} is missing text.`); valid = false; return; }
     // Options only apply to Multiple Choice
-    questions.push([q, type, type === 'Multiple Choice' ? opts : '', correct, points]);
+    questions.push([
+      q, type,
+      type === 'Multiple Choice' ? opts : '',
+      survey ? '' : correct,          // surveys carry no correct answer
+      survey ? '' : points,
+      stableId, '',                    // G ImageURL — phase 3
+      required ? 'TRUE' : 'FALSE',     // H Required
+      '', '', ''                       // I Condition, J Jump, K Config — phase 4
+    ]);
   });
 
   if (!valid) return;
@@ -715,25 +811,31 @@ async function saveQuiz() {
     if (editingQuizId) {
       // ── UPDATE existing quiz ──
       const q = allQuizzes.find(x => x.id === editingQuizId);
-      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A${editingRowIndex}:F${editingRowIndex}?valueInputOption=RAW`, {
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A${editingRowIndex}:H${editingRowIndex}?valueInputOption=RAW`, {
         method: 'PUT',
-        body: JSON.stringify({ values: [[editingQuizId, title, q.created || now, active ? 'TRUE' : 'FALSE', notify, instructions]] })
+        body: JSON.stringify({ values: [[editingQuizId, title, q.created || now, active ? 'TRUE' : 'FALSE', notify, instructions, mode, SCHEMA_VERSION]] })
       });
-      // Clear old questions (keep header)
-      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${editingQuizId}!A2:F1000:clear`, { method: 'POST', body: '{}' });
+      // Clear old questions (keep header). Clears through K so stale values
+      // in the new columns can't survive a save.
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${editingQuizId}!A2:K1000:clear`, { method: 'POST', body: '{}' });
+      // Make sure the header row covers the v2 columns
+      await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${editingQuizId}!A1?valueInputOption=RAW`, {
+        method: 'PUT',
+        body: JSON.stringify({ values: [Q_HEADER] })
+      });
       // Write new questions (RAW so text is stored exactly as typed)
       await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${editingQuizId}!A2?valueInputOption=RAW`, {
         method: 'PUT',
         body: JSON.stringify({ values: questions })
       });
-      showToast('Quiz updated!');
+      showToast(survey ? 'Survey updated!' : 'Quiz updated!');
     } else {
       // ── CREATE new quiz ──
       const newId = Math.random().toString(36).substr(2, 8);
       // Add row to Quizzes tab
       await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Quizzes!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
         method: 'POST',
-        body: JSON.stringify({ values: [[newId, title, now, active ? 'TRUE' : 'FALSE', notify, instructions]] })
+        body: JSON.stringify({ values: [[newId, title, now, active ? 'TRUE' : 'FALSE', notify, instructions, mode, SCHEMA_VERSION]] })
       });
       // Create Q_ sheet
       await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}:batchUpdate`, {
@@ -743,9 +845,9 @@ async function saveQuiz() {
       // Add header + questions
       await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${newId}!A1?valueInputOption=RAW`, {
         method: 'PUT',
-        body: JSON.stringify({ values: [['Question','Type','Options','CorrectAnswer','Points'], ...questions] })
+        body: JSON.stringify({ values: [Q_HEADER, ...questions] })
       });
-      showToast('Quiz created!');
+      showToast(survey ? 'Survey created!' : 'Quiz created!');
     }
 
     hideFullLoading();
