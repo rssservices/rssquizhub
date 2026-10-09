@@ -73,6 +73,36 @@
     .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:#4f46e5}
     .field textarea{resize:vertical;min-height:80px}
     .field-hint{font-size:12px;color:#a0aec0;margin-top:4px}
+    /* Submissions view */
+    .subs-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+    .subs-bar input[type=search]{flex:1 1 220px;padding:9px 12px;border:1.5px solid #e2e8f0;
+      border-radius:8px;font-size:14px;font-family:inherit}
+    .subs-bar .spacer{flex:1}
+    .subs-stats{font-size:13px;color:#718096;white-space:nowrap}
+    a.btn-sm{display:inline-flex;align-items:center;text-decoration:none}
+    .subs-scroll{overflow-x:auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff}
+    .subs-table{border-collapse:collapse;width:100%;font-size:13px}
+    .subs-table th,.subs-table td{border-bottom:1px solid #edf2f7;padding:9px 12px;
+      text-align:left;vertical-align:top;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+    .subs-table th{background:#f7fafc;font-weight:600;color:#4a5568;white-space:nowrap;
+      position:sticky;top:0;cursor:help}
+    .subs-table td.nowrap{white-space:nowrap}
+    .subs-table td.muted{color:#a0aec0}
+    .subs-row{cursor:pointer}
+    .subs-row:hover{background:#f7fafc}
+    .orphan-dot{color:#dd6b20}
+    .subs-detail td{background:#f7fafc;padding:0}
+    .detail-wrap{padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+    .detail-q-text{font-size:12.5px;color:#718096;margin-bottom:3px}
+    .detail-a{font-size:14px;color:#1a202c;white-space:pre-wrap;word-break:break-word}
+    .responses-link{cursor:pointer;text-decoration:underline;text-decoration-style:dotted}
+    .responses-link:hover{color:#4f46e5}
+    .logic-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
+    .logic-row select,.logic-row input{flex:1 1 130px;min-width:0;padding:8px 10px;
+      border:1.5px solid #e2e8f0;border-radius:8px;font-size:13.5px;font-family:inherit}
+    .logic-row .logic-lbl{font-size:12.5px;color:#718096;flex:0 0 auto}
+    .logic-row .btn-xs{flex:0 0 auto}
+    .jump-row{margin-bottom:6px}
     .img-preview{margin-top:8px;padding:8px;border:1px solid #e2e8f0;border-radius:8px;background:#f7fafc}
     .img-preview img{max-width:100%;max-height:180px;border-radius:6px;display:block}
     .img-preview-msg{font-size:12px;margin-top:6px;color:#718096}
@@ -170,6 +200,22 @@
         </button>
       </div>
       <div id="quiz-list"></div>
+    </div>
+
+    <!-- SUBMISSIONS VIEW -->
+    <div id="view-subs" style="display:none">
+      <div class="form-header">
+        <button class="btn btn-ghost" onclick="showDashboard()">← Back</button>
+        <h2 id="subs-title">Submissions</h2>
+      </div>
+      <div class="subs-bar">
+        <input type="search" id="subs-search" placeholder="Filter by name or email…" oninput="renderSubs()">
+        <span class="spacer"></span>
+        <span id="subs-stats" class="subs-stats"></span>
+        <button class="btn-sm" onclick="exportSubsCsv()">⬇ Export CSV</button>
+        <a id="subs-sheet-link" class="btn-sm" target="_blank" rel="noopener">Open in Sheets ↗</a>
+      </div>
+      <div id="subs-body"></div>
     </div>
 
     <!-- FORM VIEW -->
@@ -372,7 +418,8 @@ async function renderDashboard() {
           <div class="quiz-card-title">${esc(q.name)}</div>
           <div class="quiz-meta">${q.mode === 'Survey' ? 'Survey' : 'Quiz'} &nbsp;·&nbsp;
             Created ${esc(q.created || '—')} &nbsp;·&nbsp;
-            <span class="responses-count">${counts[i]} response${counts[i] !== 1 ? 's' : ''}</span>
+            <span class="responses-count responses-link" onclick="openSubs('${q.id}')"
+                  title="View submissions">${counts[i]} response${counts[i] !== 1 ? 's' : ''}</span>
           </div>
         </div>
         <span class="badge ${q.active ? 'badge-active' : 'badge-inactive'}">${q.active ? 'Active' : 'Inactive'}</span>
@@ -382,6 +429,7 @@ async function renderDashboard() {
         <button onclick="copyLink('${q.id}')">Copy Link</button>
       </div>
       <div class="quiz-card-actions">
+        <button class="btn-xs" onclick="openSubs('${q.id}')">📊 Submissions</button>
         <button class="btn-xs" onclick="editQuiz('${q.id}')">✏️ Edit</button>
         <button class="btn-xs" onclick="toggleActive('${q.id}')">${q.active ? '⏸ Deactivate' : '▶ Activate'}</button>
       </div>
@@ -416,6 +464,7 @@ async function toggleActive(quizId) {
 function showDashboard() {
   document.getElementById('view-dashboard').style.display = '';
   document.getElementById('view-form').style.display = 'none';
+  document.getElementById('view-subs').style.display = 'none';
   editingQuizId = null; editingRowIndex = null;
   loadDashboard();
 }
@@ -434,6 +483,7 @@ function showCreateForm() {
   onModeChange();
   addQuestion(); // start with one blank question
   document.getElementById('view-dashboard').style.display = 'none';
+  document.getElementById('view-subs').style.display = 'none';
   document.getElementById('view-form').style.display = '';
   window.scrollTo(0, 0);
 }
@@ -465,7 +515,8 @@ async function editQuiz(quizId) {
           title:        r[0] || '',
           instructions: r[2] || '',
           stableId:     r[5] || '',  // blank on legacy rows → a new id is minted
-          imageUrl:     r[6] || ''
+          imageUrl:     r[6] || '',
+          condition:    r[8] || ''
         });
       } else {
         addQuestion({
@@ -477,6 +528,8 @@ async function editQuiz(quizId) {
           stableId:      r[5] || '',
           imageUrl:      r[6] || '',
           required:      String(r[7] || '').toUpperCase() !== 'FALSE',
+          condition:     r[8] || '',
+          jump:          r[9] || '',
           config:        r[10] || ''
         });
       }
@@ -485,6 +538,7 @@ async function editQuiz(quizId) {
     if (!qRows.length) addQuestion();
     updateMoveButtons();
     onModeChange();
+    refreshLogicControls(); // all cards now exist, so data-want values resolve
 
     // A legacy quiz that already has responses will be migrated to the new
     // column layout on save. Warn before that happens, not after.
@@ -500,6 +554,7 @@ async function editQuiz(quizId) {
     }
     hideFullLoading();
     document.getElementById('view-dashboard').style.display = 'none';
+    document.getElementById('view-subs').style.display = 'none';
     document.getElementById('view-form').style.display = '';
     window.scrollTo(0, 0);
   } catch (e) {
@@ -527,6 +582,373 @@ function onModeChange() {
     const cor = card.querySelector('.q-correct-wrap');
     if (cor) cor.style.display = survey ? 'none' : '';
   });
+}
+
+// ── SUBMISSIONS VIEW ──────────────────────────────────────────
+let subsState = { quiz: null, cols: [], rows: [], expanded: null };
+
+async function openSubs(quizId) {
+  const quiz = allQuizzes.find(x => x.id === quizId);
+  if (!quiz) return;
+  showFullLoading('Loading submissions...');
+  try {
+    // Question definitions give the full text and type for each column;
+    // the response tab holds the answers.
+    const [qRes, rRes] = await Promise.all([
+      apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Q_${quizId}!A:K`),
+      apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/R_${quizId}!A:ZZ`)
+        .catch(() => ({ values: [] }))   // no responses yet → no tab
+    ]);
+
+    const qRows = (qRes.values || []).slice(1)
+      .filter(r => r[0] && String(r[1] || '').trim().toLowerCase() !== 'section');
+    const byQid = {};
+    qRows.forEach((r, i) => {
+      const qid = r[5] || ('p' + (i + 1));
+      byQid[qid] = { text: r[0] || '', type: r[1] || '', pos: i + 1 };
+    });
+
+    const all = rRes.values || [];
+    const header = all[0] || [];
+    const rows = all.slice(1).filter(r => (r || []).some(c => String(c || '').trim() !== ''));
+
+    // Columns between Email and Score are the answers. v2 headers carry the
+    // question id in brackets; v1 headers are plain "Q1", "Q2"… and match by
+    // position instead.
+    const cols = [];
+    for (let c = 3; c < header.length; c++) {
+      const cell = String(header[c] || '');
+      if (cell === 'Score') break;
+      const m = cell.match(/\[([^\]]+)\]\s*$/);
+      const qid = m ? m[1] : null;
+      const def = qid ? byQid[qid] : qRows[c - 3] ? { text: qRows[c - 3][0], type: qRows[c - 3][1], pos: c - 2 } : null;
+      cols.push({
+        index: c,
+        qid: qid,
+        label: 'Q' + (cols.length + 1),
+        // For a deleted question, recover its text from the stored header by
+        // dropping both the old "Qn · " prefix and the trailing [qid] — the
+        // old position would otherwise contradict this column's new label.
+        text: def ? def.text : cell.replace(/\s*\[[^\]]+\]\s*$/, '').replace(/^Q\d+\s*·\s*/, ''),
+        type: def ? def.type : '',
+        // A column whose question no longer exists still holds real history.
+        orphan: !def
+      });
+    }
+    const scoreIdx = header.indexOf('Score') !== -1 ? header.indexOf('Score') : 3 + cols.length;
+
+    subsState = { quiz, cols, rows, scoreIdx, expanded: null };
+    document.getElementById('subs-title').textContent = quiz.name || 'Submissions';
+    document.getElementById('subs-sheet-link').href =
+      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`;
+    document.getElementById('subs-search').value = '';
+    renderSubs();
+
+    hideFullLoading();
+    document.getElementById('view-dashboard').style.display = 'none';
+    document.getElementById('view-form').style.display = 'none';
+    document.getElementById('view-subs').style.display = '';
+    window.scrollTo(0, 0);
+  } catch (e) {
+    hideFullLoading();
+    showToast('Failed to load submissions: ' + e.message, true);
+  }
+}
+
+function subsFiltered() {
+  const q = (document.getElementById('subs-search').value || '').trim().toLowerCase();
+  if (!q) return subsState.rows;
+  return subsState.rows.filter(r =>
+    String(r[1] || '').toLowerCase().indexOf(q) !== -1 ||
+    String(r[2] || '').toLowerCase().indexOf(q) !== -1);
+}
+
+// Averages only the rows that actually carry a score, so unscored surveys
+// and "Submitted" rows don't drag the number down.
+function subsAverage(rows) {
+  const pcts = rows.map(r => {
+    const m = String(r[subsState.scoreIdx] || '').match(/\((\d+)%\)/);
+    return m ? parseInt(m[1]) : null;
+  }).filter(v => v !== null);
+  if (!pcts.length) return null;
+  return Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+}
+
+function renderSubs() {
+  const rows = subsFiltered();
+  const isSurvey = subsState.quiz.mode === 'Survey';
+  const avg = isSurvey ? null : subsAverage(rows);
+  document.getElementById('subs-stats').textContent =
+    `${rows.length} of ${subsState.rows.length} shown` + (avg !== null ? ` · avg ${avg}%` : '');
+
+  const body = document.getElementById('subs-body');
+  if (!subsState.rows.length) {
+    body.innerHTML = `<div class="empty-state"><p>No submissions yet.
+      Responses appear here as soon as someone completes this ${isSurvey ? 'survey' : 'quiz'}.</p></div>`;
+    return;
+  }
+  if (!rows.length) {
+    body.innerHTML = `<div class="empty-state"><p>No submissions match that filter.</p></div>`;
+    return;
+  }
+
+  let html = `<div class="subs-scroll"><table class="subs-table"><thead><tr>
+    <th>Submitted</th><th>Name</th><th>Email</th>` +
+    subsState.cols.map(c =>
+      `<th title="${esc(c.text || '')}">${esc(c.label)}${c.orphan ? ' <span class="orphan-dot" title="This question no longer exists in the form">•</span>' : ''}</th>`
+    ).join('') +
+    (isSurvey ? '' : '<th>Score</th>') + `</tr></thead><tbody>`;
+
+  rows.forEach((r) => {
+    const realIdx = subsState.rows.indexOf(r);
+    html += `<tr class="subs-row" onclick="toggleSubRow(${realIdx})">
+      <td class="nowrap">${esc(r[0] || '')}</td>
+      <td>${esc(r[1] || '')}</td>
+      <td class="muted">${esc(r[2] || '')}</td>` +
+      subsState.cols.map(c => {
+        const v = String(r[c.index] == null ? '' : r[c.index]);
+        const skipped = v === '—';
+        return `<td class="${skipped ? 'muted' : ''}" title="${esc(v)}">${
+          skipped ? 'skipped' : esc(v.length > 40 ? v.slice(0, 40) + '…' : v)}</td>`;
+      }).join('') +
+      (isSurvey ? '' : `<td class="nowrap">${esc(r[subsState.scoreIdx] || '')}</td>`) +
+      `</tr>`;
+
+    if (subsState.expanded === realIdx) {
+      const span = 3 + subsState.cols.length + (isSurvey ? 0 : 1);
+      html += `<tr class="subs-detail"><td colspan="${span}"><div class="detail-wrap">` +
+        subsState.cols.map(c => {
+          const v = String(r[c.index] == null ? '' : r[c.index]);
+          return `<div class="detail-q">
+            <div class="detail-q-text">${esc(c.label)}. ${esc(c.text || '(question no longer in the form)')}</div>
+            <div class="detail-a ${v === '—' ? 'muted' : ''}">${
+              v === '—' ? 'Not shown to this person' : (v.trim() === '' ? '(no answer)' : esc(v))}</div>
+          </div>`;
+        }).join('') + `</div></td></tr>`;
+    }
+  });
+
+  body.innerHTML = html + `</tbody></table></div>`;
+}
+
+function toggleSubRow(i) {
+  subsState.expanded = subsState.expanded === i ? null : i;
+  renderSubs();
+}
+
+function exportSubsCsv() {
+  const isSurvey = subsState.quiz.mode === 'Survey';
+  const head = ['Submitted', 'Name', 'Email']
+    .concat(subsState.cols.map(c => `${c.label}. ${c.text || ''}`))
+    .concat(isSurvey ? [] : ['Score']);
+  const body = subsFiltered().map(r =>
+    [r[0] || '', r[1] || '', r[2] || '']
+      .concat(subsState.cols.map(c => r[c.index] == null ? '' : r[c.index]))
+      .concat(isSurvey ? [] : [r[subsState.scoreIdx] || '']));
+
+  // Quote every field; a leading =, +, - or @ is prefixed with a quote so
+  // spreadsheets don't treat a submitted answer as a formula.
+  const cell = v => {
+    let s = String(v == null ? '' : v);
+    if (/^[=+\-@]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  };
+  const csv = [head, ...body].map(r => r.map(cell).join(',')).join('\r\n');
+
+  const name = (subsState.quiz.name || 'submissions').replace(/[\\/:*?"<>|]/g, '-').trim();
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name + '.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 2000);
+}
+
+// ── CONDITIONAL LOGIC ─────────────────────────────────────────
+// Snapshot of the cards in on-screen order, with the answer values each one
+// can offer. Rebuilt on demand because every edit can change it.
+function logicContext() {
+  const out = [];
+  document.querySelectorAll('#questions-list .q-card').forEach((card, idx) => {
+    if (card.dataset.kind === 'section') {
+      out.push({ card, idx, kind: 'section', stableId: card.dataset.stableId,
+                 label: card.querySelector('.s-title').value.trim() || 'Untitled section',
+                 options: [] });
+      return;
+    }
+    const type = card.querySelector('.q-type').value;
+    const caps = typeCaps(type);
+    let options = [];
+    if (caps.options) {
+      options = card.querySelector('.q-options').value.split('\n').map(s => s.trim()).filter(Boolean);
+    } else if (type === 'True/False') {
+      options = ['True', 'False'];
+    } else if (caps.rating) {
+      const min = parseInt(card.querySelector('.q-rate-min').value) || 1;
+      const max = parseInt(card.querySelector('.q-rate-max').value) || 5;
+      for (let n = min; n <= max && n - min < 50; n++) options.push(String(n));
+    }
+    out.push({ card, idx, kind: 'question', stableId: card.dataset.stableId,
+               label: card.querySelector('.q-question').value.trim() || 'Untitled question',
+               type, options });
+  });
+  return out;
+}
+
+function trunc(s, n) {
+  s = String(s || '');
+  return s.length > (n || 50) ? s.slice(0, n || 50) + '…' : s;
+}
+
+// Rebuilds every dynamic picker. A select keeps its value when it is still a
+// valid choice; `data-want` carries a value that isn't in the list yet
+// (set while loading a saved form, before the other cards exist).
+function setSelect(sel, html, valid) {
+  const want = sel.dataset.want || sel.value;
+  sel.innerHTML = html;
+  sel.value = valid.indexOf(want) !== -1 ? want : '';
+  delete sel.dataset.want;
+}
+
+function refreshLogicControls() {
+  const ctx = logicContext();
+
+  ctx.forEach((item, i) => {
+    const card = item.card;
+
+    // Condition source: questions ABOVE this card that have fixed options.
+    // Restricting to fixed options keeps the value picker meaningful and
+    // rules out self-reference and forward references by construction.
+    const condSel = card.querySelector('.q-cond-qid');
+    if (condSel) {
+      const earlier = ctx.filter((o, j) => j < i && o.kind === 'question' && o.options.length);
+      setSelect(condSel,
+        '<option value="">— always show —</option>' +
+        earlier.map(o => `<option value="${esc(o.stableId)}">${esc(trunc(o.label))}</option>`).join(''),
+        [''].concat(earlier.map(o => o.stableId)));
+
+      const row = card.querySelector('.logic-row');
+      row.querySelector('.q-cond-op').style.display    = condSel.value ? '' : 'none';
+      row.querySelector('.q-cond-value').style.display = condSel.value ? '' : 'none';
+
+      // Offer the referenced question's own options as the value list.
+      const src = earlier.filter(o => o.stableId === condSel.value)[0];
+      const dl  = card.querySelector(`#dl-${card.dataset.qid}`);
+      if (dl) dl.innerHTML = (src ? src.options : []).map(o => `<option value="${esc(o)}">`).join('');
+    }
+
+    // Jump targets: sections BELOW this card, plus ending the form. Only
+    // later sections are listed, so a jump can never loop backwards.
+    const jumpWrap = card.querySelector('.jump-wrap');
+    if (jumpWrap) {
+      const canJump = item.options.length > 0;   // needs discrete answers
+      const later   = ctx.filter((o, j) => j > i && o.kind === 'section');
+      jumpWrap.style.display = (canJump && later.length) ? '' : 'none';
+
+      const jdl = card.querySelector(`#jdl-${card.dataset.qid}`);
+      if (jdl) jdl.innerHTML = item.options.map(o => `<option value="${esc(o)}">`).join('') +
+                               '<option value="*">';
+
+      card.querySelectorAll('.jump-to').forEach(sel => {
+        setSelect(sel,
+          '<option value="">— select —</option>' +
+          later.map(o => `<option value="${esc(o.stableId)}">${esc(trunc(o.label))}</option>`).join('') +
+          '<option value="END">End the form (submit)</option>',
+          [''].concat(later.map(o => o.stableId)).concat(['END']));
+      });
+    }
+  });
+}
+
+// Restores a card's saved rules. The target cards may not exist yet while a
+// form is loading, so values go in as `data-want` and settle once
+// refreshLogicControls() runs with the full list present.
+function applySavedLogic(card, data) {
+  let cond = {};
+  try {
+    if (data.condition) cond = typeof data.condition === 'string' ? JSON.parse(data.condition) : data.condition;
+  } catch (e) { cond = {}; }
+  if (cond && cond.qid) {
+    const sel = card.querySelector('.q-cond-qid');
+    if (sel) {
+      sel.dataset.want = cond.qid;
+      const op = card.querySelector('.q-cond-op');
+      if (op && cond.op) op.value = cond.op;
+      const val = card.querySelector('.q-cond-value');
+      if (val) val.value = cond.value == null ? '' : cond.value;
+    }
+  }
+
+  let jump = [];
+  try {
+    if (data.jump) jump = typeof data.jump === 'string' ? JSON.parse(data.jump) : data.jump;
+  } catch (e) { jump = []; }
+  if (Array.isArray(jump)) {
+    jump.forEach(r => { if (r && r.to) addJumpRow(card.dataset.qid, r.value, r.to); });
+  }
+}
+
+// Reads a card's rules back out as the JSON written to columns I and J.
+// Returns an `error` string instead when the rule can't be saved.
+function readLogic(card, ctx, label) {
+  const condSel = card.querySelector('.q-cond-qid');
+  let condition = '';
+  if (condSel && condSel.value) {
+    const op  = card.querySelector('.q-cond-op').value;
+    const val = card.querySelector('.q-cond-value').value.trim();
+    if (!val) return { error: `${label}: the "show only if" rule has no answer value.` };
+
+    const src = ctx.filter(o => o.stableId === condSel.value)[0];
+    if (src && src.options.length) {
+      // Catch typos: a value that matches no option can never be true.
+      const wanted = op === 'any_of' ? val.split(',').map(s => s.trim()).filter(Boolean) : [val];
+      const lower  = src.options.map(o => o.toLowerCase());
+      const miss   = wanted.filter(w => lower.indexOf(w.toLowerCase()) === -1);
+      if (miss.length) {
+        return { error: `${label}: "${miss[0]}" is not one of the options for "${trunc(src.label, 30)}". ` +
+                        `This rule could never match.` };
+      }
+    }
+    condition = JSON.stringify({ qid: condSel.value, op: op, value: val });
+  }
+
+  const rules = [];
+  const seenVals = {};
+  const rows = card.querySelectorAll('.jump-row');
+  for (const row of rows) {
+    const v = row.querySelector('.jump-value').value.trim();
+    const t = row.querySelector('.jump-to').value;
+    if (!v && !t) continue;                       // blank row, ignore
+    if (!v || !t) return { error: `${label}: a jump rule is incomplete.` };
+
+    const self = ctx.filter(o => o.card === card)[0];
+    if (v !== '*' && self && self.options.length &&
+        self.options.map(o => o.toLowerCase()).indexOf(v.toLowerCase()) === -1) {
+      return { error: `${label}: the jump rule answer "${v}" is not one of this question's options.` };
+    }
+    const key = v.toLowerCase();
+    if (seenVals[key]) return { error: `${label}: there are two jump rules for the answer "${v}".` };
+    seenVals[key] = true;
+    rules.push({ value: v, to: t });
+  }
+
+  return { condition: condition, jump: rules.length ? JSON.stringify(rules) : '' };
+}
+
+function addJumpRow(id, value, to) {
+  const card = document.querySelector(`[data-qid="${id}"]`);
+  if (!card) return;
+  const row = document.createElement('div');
+  row.className = 'logic-row jump-row';
+  row.innerHTML =
+    `<span class="logic-lbl">If</span>` +
+    `<input type="text" class="jump-value" list="jdl-${id}" value="${esc(value || '')}" placeholder="answer, or *">` +
+    `<span class="logic-lbl">go to</span>` +
+    `<select class="jump-to"></select>` +
+    `<button type="button" class="btn-xs danger" onclick="this.parentElement.remove()">✕</button>`;
+  if (to) row.querySelector('.jump-to').dataset.want = to;
+  card.querySelector('.jump-rows').appendChild(row);
+  refreshLogicControls();
 }
 
 // ── IMAGES ────────────────────────────────────────────────────
@@ -599,7 +1021,7 @@ function addQuestion(data = {}) {
     <div class="q-fields">
       <div class="field">
         <label>Question</label>
-        <textarea class="q-question" rows="2" placeholder="Enter question text...">${esc(data.question || '')}</textarea>
+        <textarea class="q-question" rows="2" oninput="refreshLogicControls()" placeholder="Enter question text...">${esc(data.question || '')}</textarea>
       </div>
       <div class="field">
         <label>Image <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
@@ -611,7 +1033,7 @@ function addQuestion(data = {}) {
       <div class="q-row">
         <div class="field">
           <label>Type</label>
-          <select class="q-type" onchange="onTypeChange(${id})">
+          <select class="q-type" onchange="onTypeChange(${id}); refreshLogicControls()">
             <option value="Multiple Choice"  ${type==='Multiple Choice'?'selected':''}>Multiple Choice (pick one)</option>
             <option value="Checkboxes"       ${type==='Checkboxes'?'selected':''}>Checkboxes (pick several)</option>
             <option value="Dropdown"         ${type==='Dropdown'?'selected':''}>Dropdown (pick one)</option>
@@ -634,6 +1056,28 @@ function addQuestion(data = {}) {
           </div>
           <label class="toggle"><input type="checkbox" class="q-required" ${data.required === false ? '' : 'checked'}><span class="slider"></span></label>
         </div>
+      </div>
+      <div class="field logic-wrap">
+        <label>Show only if <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+        <div class="logic-row">
+          <select class="q-cond-qid" onchange="refreshLogicControls()"></select>
+          <select class="q-cond-op" onchange="refreshLogicControls()">
+            <option value="is">is</option>
+            <option value="is_not">is not</option>
+            <option value="includes">includes</option>
+            <option value="any_of">is any of</option>
+          </select>
+          <input type="text" class="q-cond-value" list="dl-${id}" placeholder="answer">
+          <datalist id="dl-${id}"></datalist>
+        </div>
+        <div class="field-hint">Leave on “always show” for no condition. Only questions above this one, with fixed options, can be used.</div>
+      </div>
+      <div class="field jump-wrap">
+        <label>After answering, jump to <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+        <div class="jump-rows"></div>
+        <button type="button" class="add-q-btn" onclick="addJumpRow(${id})">+ Add jump rule</button>
+        <datalist id="jdl-${id}"></datalist>
+        <div class="field-hint">Skips ahead to a later section. Use <code>*</code> as the answer to match anything.</div>
       </div>
       <div class="q-rating-wrap" style="display:none">
         <div class="q-row">
@@ -659,7 +1103,7 @@ function addQuestion(data = {}) {
       </div>
       <div class="q-options-wrap field">
         <label>Answer Options <span style="color:#a0aec0;font-weight:400">(one per line)</span></label>
-        <textarea class="q-options" rows="4" placeholder="A. Option one&#10;B. Option two&#10;C. Option three&#10;D. Option four" oninput="updateCorrectSelect(${id})">${esc(data.options || '')}</textarea>
+        <textarea class="q-options" rows="4" placeholder="A. Option one&#10;B. Option two&#10;C. Option three&#10;D. Option four" oninput="updateCorrectSelect(${id}); refreshLogicControls()">${esc(data.options || '')}</textarea>
       </div>
       <div class="q-correct-wrap field">
         <label>Correct Answer</label>
@@ -678,6 +1122,8 @@ function addQuestion(data = {}) {
   updateMoveButtons();
   onModeChange(); // a new card must respect the current Quiz/Survey mode
   if (data.imageUrl) updateImagePreview(id);
+  applySavedLogic(div, data);
+  refreshLogicControls();
 }
 
 // ── SECTION BUILDER ───────────────────────────────────────────
@@ -701,7 +1147,7 @@ function addSection(data = {}) {
     <div class="q-fields">
       <div class="field">
         <label>Section Title</label>
-        <input type="text" class="s-title" placeholder="e.g. Part 1 – Active Listening" value="${esc(data.title || '')}">
+        <input type="text" class="s-title" oninput="refreshLogicControls()" placeholder="e.g. Part 1 – Active Listening" value="${esc(data.title || '')}">
       </div>
       <div class="field">
         <label>Section Instructions <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
@@ -714,12 +1160,29 @@ function addSection(data = {}) {
         <div class="field-hint">Shown in the section banner, above every question in this section.</div>
         <div class="img-preview" style="display:none"></div>
       </div>
+      <div class="field logic-wrap">
+        <label>Show this section only if <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+        <div class="logic-row">
+          <select class="q-cond-qid" onchange="refreshLogicControls()"></select>
+          <select class="q-cond-op" onchange="refreshLogicControls()">
+            <option value="is">is</option>
+            <option value="is_not">is not</option>
+            <option value="includes">includes</option>
+            <option value="any_of">is any of</option>
+          </select>
+          <input type="text" class="q-cond-value" list="dl-${id}" placeholder="answer">
+          <datalist id="dl-${id}"></datalist>
+        </div>
+        <div class="field-hint">Hiding a section hides every question inside it.</div>
+      </div>
     </div>`;
 
   list.appendChild(div);
   renumberQuestions();
   updateMoveButtons();
   if (data.imageUrl) updateImagePreview(id);
+  applySavedLogic(div, data);
+  refreshLogicControls();
 }
 
 // ── REORDER ───────────────────────────────────────────────────
@@ -738,6 +1201,9 @@ function moveCard(id, dir) {
   }
   renumberQuestions();
   updateMoveButtons();
+  // Moving a card changes what counts as "earlier" and "later", so rules
+  // that are no longer valid are dropped from the pickers here.
+  refreshLogicControls();
 }
 
 function updateMoveButtons() {
@@ -754,6 +1220,9 @@ function removeQuestion(id) {
   if (el) el.remove();
   renumberQuestions();
   updateMoveButtons();
+  // Any rule pointing at the deleted card silently resets to "always show"
+  // rather than saving a dangling reference.
+  refreshLogicControls();
 }
 
 // Only question cards get numbers; section cards are skipped
@@ -913,6 +1382,7 @@ async function saveQuiz() {
   // F QID | G ImageURL | H Required | I Condition | J Jump | K Config
   // G–K are reserved for later phases and written blank for now.
   const questions = [];
+  const ctx = logicContext();
   let valid = true, qNum = 0, sNum = 0;
   cards.forEach(card => {
     if (!valid) return;
@@ -924,7 +1394,9 @@ async function saveQuiz() {
       const sInstr = card.querySelector('.s-instructions').value.trim();
       const sImg   = card.querySelector('.q-image').value.trim();
       if (!sTitle) { showFormError(`Section ${sNum} is missing a title.`); valid = false; return; }
-      questions.push([sTitle, 'Section', sInstr, '', '', stableId, sImg, '', '', '', '']);
+      const sLogic = readLogic(card, ctx, `Section ${sNum}`);
+      if (sLogic.error) { showFormError(sLogic.error); valid = false; return; }
+      questions.push([sTitle, 'Section', sInstr, '', '', stableId, sImg, '', sLogic.condition, '', '']);
       return;
     }
 
@@ -968,6 +1440,9 @@ async function saveQuiz() {
       valid = false; return;
     }
 
+    const logic = readLogic(card, ctx, `Question ${i+1}`);
+    if (logic.error) { showFormError(logic.error); valid = false; return; }
+
     questions.push([
       q, type,
       caps.options ? opts : '',
@@ -976,7 +1451,8 @@ async function saveQuiz() {
       stableId,
       card.querySelector('.q-image').value.trim(),  // G ImageURL
       required ? 'TRUE' : 'FALSE',     // H Required
-      '', '',                          // I Condition, J Jump — phase 4
+      logic.condition,                 // I Condition
+      logic.jump,                      // J Jump
       config                           // K Config
     ]);
   });
