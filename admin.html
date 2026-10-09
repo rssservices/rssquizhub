@@ -471,7 +471,8 @@ async function editQuiz(quizId) {
           correctAnswer: r[3] || '',
           points:        r[4] || '1',
           stableId:      r[5] || '',
-          required:      String(r[7] || '').toUpperCase() !== 'FALSE'
+          required:      String(r[7] || '').toUpperCase() !== 'FALSE',
+          config:        r[10] || ''
         });
       }
     });
@@ -535,6 +536,13 @@ function addQuestion(data = {}) {
   const list = document.getElementById('questions-list');
   const num  = list.children.length + 1;
   const type = data.type || 'Multiple Choice';
+  // Type-specific settings (currently only the Rating scale) ride in the
+  // Config column as JSON. A malformed value falls back to defaults rather
+  // than breaking the whole card.
+  let cfg = {};
+  try {
+    if (data.config) cfg = typeof data.config === 'string' ? JSON.parse(data.config) : data.config;
+  } catch (e) { cfg = {}; }
 
   const div = document.createElement('div');
   div.className = 'q-card';
@@ -560,9 +568,13 @@ function addQuestion(data = {}) {
         <div class="field">
           <label>Type</label>
           <select class="q-type" onchange="onTypeChange(${id})">
-            <option value="Multiple Choice"  ${type==='Multiple Choice'?'selected':''}>Multiple Choice</option>
+            <option value="Multiple Choice"  ${type==='Multiple Choice'?'selected':''}>Multiple Choice (pick one)</option>
+            <option value="Checkboxes"       ${type==='Checkboxes'?'selected':''}>Checkboxes (pick several)</option>
+            <option value="Dropdown"         ${type==='Dropdown'?'selected':''}>Dropdown (pick one)</option>
             <option value="True/False"       ${type==='True/False'||type==='TF'?'selected':''}>True / False</option>
-            <option value="Short Text"       ${type==='Short Text'||type.toLowerCase().includes('text')||type.toLowerCase().includes('short')?'selected':''}>Short Text (Open-ended)</option>
+            <option value="Rating"           ${type==='Rating'?'selected':''}>Rating / Scale</option>
+            <option value="Short Text"       ${type==='Short Text'||(type!=='Long Text'&&(type.toLowerCase().includes('short')||type.toLowerCase().includes('text')))?'selected':''}>Short Text (one line)</option>
+            <option value="Long Text"        ${type==='Long Text'?'selected':''}>Long Text (paragraph)</option>
           </select>
         </div>
         <div class="field q-points-wrap">
@@ -579,6 +591,28 @@ function addQuestion(data = {}) {
           <label class="toggle"><input type="checkbox" class="q-required" ${data.required === false ? '' : 'checked'}><span class="slider"></span></label>
         </div>
       </div>
+      <div class="q-rating-wrap" style="display:none">
+        <div class="q-row">
+          <div class="field">
+            <label>Scale from</label>
+            <input type="number" class="q-rate-min" value="${esc(cfg.min != null ? cfg.min : 1)}" min="0" max="10" onchange="updateRatingSelect(${id})">
+          </div>
+          <div class="field">
+            <label>to</label>
+            <input type="number" class="q-rate-max" value="${esc(cfg.max != null ? cfg.max : 5)}" min="2" max="10" onchange="updateRatingSelect(${id})">
+          </div>
+        </div>
+        <div class="q-row">
+          <div class="field">
+            <label>Low label <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+            <input type="text" class="q-rate-minlabel" placeholder="e.g. Strongly disagree" value="${esc(cfg.minLabel || '')}">
+          </div>
+          <div class="field">
+            <label>High label <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+            <input type="text" class="q-rate-maxlabel" placeholder="e.g. Strongly agree" value="${esc(cfg.maxLabel || '')}">
+          </div>
+        </div>
+      </div>
       <div class="q-options-wrap field">
         <label>Answer Options <span style="color:#a0aec0;font-weight:400">(one per line)</span></label>
         <textarea class="q-options" rows="4" placeholder="A. Option one&#10;B. Option two&#10;C. Option three&#10;D. Option four" oninput="updateCorrectSelect(${id})">${esc(data.options || '')}</textarea>
@@ -587,7 +621,7 @@ function addQuestion(data = {}) {
         <label>Correct Answer</label>
         <select class="q-correct-select" style="display:none" onchange="syncCorrectInput(${id})"><option value="">— select —</option></select>
         <input type="text" class="q-correct-input" placeholder="Type correct answer..." value="${esc(data.correctAnswer || '')}">
-        <div class="field-hint">For Multiple Choice: select from the options above. For Short Text: leave empty if ungraded.</div>
+        <div class="field-hint q-correct-hint">For Multiple Choice: select from the options above. For Short Text: leave empty if ungraded.</div>
       </div>
     </div>`;
 
@@ -676,65 +710,133 @@ function renumberQuestions() {
   });
 }
 
-function onTypeChange(id, forceType, correctVal) {
-  const card     = document.querySelector(`[data-qid="${id}"]`);
-  const type     = forceType || card.querySelector('.q-type').value;
-  const optWrap  = card.querySelector('.q-options-wrap');
-  const corrWrap = card.querySelector('.q-correct-wrap');
-  const selEl    = card.querySelector('.q-correct-select');
-  const inpEl    = card.querySelector('.q-correct-input');
-
-  if (type === 'True/False') {
-    optWrap.style.display  = 'none';
-    corrWrap.style.display = '';
-    selEl.style.display    = '';
-    inpEl.style.display    = 'none';
-    selEl.innerHTML = '<option value="">— select —</option><option value="True">True</option><option value="False">False</option>';
-    if (correctVal) {
-      const lower = correctVal.toLowerCase();
-      const norm  = lower === 'true' ? 'True' : lower === 'false' ? 'False' : correctVal;
-      selEl.value = norm;
-      inpEl.value = norm;
-    }
-    else if (forceType) { /* keep blank */ }
-  } else if (type === 'Short Text') {
-    optWrap.style.display  = 'none';
-    corrWrap.style.display = '';
-    selEl.style.display    = 'none';
-    inpEl.style.display    = '';
-    if (correctVal !== undefined) inpEl.value = correctVal;
-  } else {
-    // Multiple Choice
-    optWrap.style.display  = '';
-    corrWrap.style.display = '';
-    updateCorrectSelect(id, correctVal);
+// What each question type supports. Drives which fields show on the card.
+//   options — needs the one-per-line Answer Options box
+//   correct — can carry a correct answer at all
+//   multi   — the answer is a set, so the correct answer is multi-select
+//   rating  — needs the numeric scale config
+function typeCaps(type) {
+  switch (String(type || '')) {
+    case 'True/False': return { options: false, correct: true,  multi: false, rating: false };
+    case 'Short Text': return { options: false, correct: true,  multi: false, rating: false };
+    case 'Long Text':  return { options: false, correct: false, multi: false, rating: false };
+    case 'Rating':     return { options: false, correct: true,  multi: false, rating: true  };
+    case 'Checkboxes': return { options: true,  correct: true,  multi: true,  rating: false };
+    case 'Dropdown':   return { options: true,  correct: true,  multi: false, rating: false };
+    default:           return { options: true,  correct: true,  multi: false, rating: false }; // Multiple Choice
   }
 }
 
-function updateCorrectSelect(id, preselect) {
-  const card    = document.querySelector(`[data-qid="${id}"]`);
+function onTypeChange(id, forceType, correctVal) {
+  const card     = document.querySelector(`[data-qid="${id}"]`);
   if (!card) return;
-  const type    = card.querySelector('.q-type').value;
-  if (type !== 'Multiple Choice') return;
+  const type     = forceType || card.querySelector('.q-type').value;
+  const caps     = typeCaps(type);
+  const optWrap  = card.querySelector('.q-options-wrap');
+  const corrWrap = card.querySelector('.q-correct-wrap');
+  const rateWrap = card.querySelector('.q-rating-wrap');
+  const selEl    = card.querySelector('.q-correct-select');
+  const inpEl    = card.querySelector('.q-correct-input');
+  const hintEl   = card.querySelector('.q-correct-hint');
 
-  const optsTxt = card.querySelector('.q-options').value;
-  const opts    = optsTxt.split('\n').map(s => s.trim()).filter(Boolean);
-  const selEl   = card.querySelector('.q-correct-select');
-  const inpEl   = card.querySelector('.q-correct-input');
-  const current = preselect !== undefined ? preselect : selEl.value;
+  optWrap.style.display  = caps.options ? '' : 'none';
+  rateWrap.style.display = caps.rating  ? '' : 'none';
+  corrWrap.style.display = caps.correct ? '' : 'none';
+  selEl.multiple = caps.multi;
+  selEl.size     = caps.multi ? 5 : 0;
+
+  if (!caps.correct) {           // Long Text is never graded
+    inpEl.value = '';
+    return;
+  }
+
+  if (type === 'True/False') {
+    selEl.style.display = ''; inpEl.style.display = 'none';
+    selEl.innerHTML = '<option value="">— select —</option><option value="True">True</option><option value="False">False</option>';
+    if (correctVal) {
+      const lower = String(correctVal).toLowerCase();
+      const norm  = lower === 'true' ? 'True' : lower === 'false' ? 'False' : correctVal;
+      selEl.value = norm; inpEl.value = norm;
+    }
+    hintEl.textContent = 'Pick which one is correct.';
+  } else if (type === 'Short Text') {
+    selEl.style.display = 'none'; inpEl.style.display = '';
+    if (correctVal !== undefined) inpEl.value = correctVal;
+    hintEl.textContent = 'Leave empty to keep this question ungraded.';
+  } else if (type === 'Rating') {
+    updateRatingSelect(id, correctVal);
+    hintEl.textContent = 'Optional — leave blank to collect the rating without grading it.';
+  } else {
+    // Multiple Choice, Dropdown, Checkboxes — all driven by the options box
+    updateCorrectSelect(id, correctVal);
+    hintEl.textContent = caps.multi
+      ? 'Select every option that must be ticked. Order does not matter.'
+      : 'Select the correct option from the list above.';
+  }
+}
+
+// Rebuilds the correct-answer picker from the current Answer Options text.
+function updateCorrectSelect(id, preselect) {
+  const card = document.querySelector(`[data-qid="${id}"]`);
+  if (!card) return;
+  const type = card.querySelector('.q-type').value;
+  const caps = typeCaps(type);
+  if (!caps.options) return;
+
+  const opts  = card.querySelector('.q-options').value
+                  .split('\n').map(s => s.trim()).filter(Boolean);
+  const selEl = card.querySelector('.q-correct-select');
+  const inpEl = card.querySelector('.q-correct-input');
+  const raw   = preselect !== undefined ? preselect : readCorrect(card);
+  // A checkbox answer is stored comma-joined; compare per option.
+  const chosen = String(raw || '').split(',').map(s => s.trim()).filter(Boolean);
 
   selEl.style.display = opts.length ? '' : 'none';
   inpEl.style.display = opts.length ? 'none' : '';
 
-  selEl.innerHTML = '<option value="">— select correct answer —</option>' +
-    opts.map(o => `<option value="${esc(o)}" ${o === current ? 'selected' : ''}>${esc(o)}</option>`).join('');
-  if (opts.length) inpEl.value = selEl.value;
+  selEl.innerHTML = (caps.multi ? '' : '<option value="">— select correct answer —</option>') +
+    opts.map(o => `<option value="${esc(o)}" ${chosen.indexOf(o) !== -1 ? 'selected' : ''}>${esc(o)}</option>`).join('');
+  if (opts.length) inpEl.value = readSelect(selEl);
+}
+
+// Builds the 1–N picker for a Rating question from its configured bounds.
+function updateRatingSelect(id, preselect) {
+  const card  = document.querySelector(`[data-qid="${id}"]`);
+  if (!card) return;
+  const min   = parseInt(card.querySelector('.q-rate-min').value) || 1;
+  const max   = parseInt(card.querySelector('.q-rate-max').value) || 5;
+  const selEl = card.querySelector('.q-correct-select');
+  const inpEl = card.querySelector('.q-correct-input');
+  const cur   = preselect !== undefined ? preselect : readCorrect(card);
+
+  selEl.style.display = ''; inpEl.style.display = 'none';
+  let html = '<option value="">— not graded —</option>';
+  for (let n = min; n <= max && n - min < 50; n++) {
+    html += `<option value="${n}" ${String(cur) === String(n) ? 'selected' : ''}>${n}</option>`;
+  }
+  selEl.innerHTML = html;
+  inpEl.value = selEl.value;
+}
+
+// The hidden text input is the single source of truth on save — the select
+// may be multi-value, and for free text there is no select at all.
+function readSelect(selEl) {
+  if (selEl.multiple) {
+    return Array.from(selEl.selectedOptions).map(o => o.value).filter(Boolean).join(', ');
+  }
+  return selEl.value;
+}
+
+function readCorrect(card) {
+  return card.querySelector('.q-correct-input').value ||
+         readSelect(card.querySelector('.q-correct-select'));
 }
 
 function syncCorrectInput(id) {
   const card = document.querySelector(`[data-qid="${id}"]`);
   if (!card) return;
-  card.querySelector('.q-correct-input').value = card.querySelector('.q-correct-select').value;
+  card.querySelector('.q-correct-input').value =
+    readSelect(card.querySelector('.q-correct-select'));
 }
 
 // ── SAVE QUIZ ─────────────────────────────────────────────────
@@ -776,27 +878,51 @@ async function saveQuiz() {
     const i       = qNum - 1;
     const q       = card.querySelector('.q-question').value.trim();
     const type    = card.querySelector('.q-type').value;
+    const caps    = typeCaps(type);
     const opts    = card.querySelector('.q-options').value.trim();
-    const tfRaw   = card.querySelector('.q-correct-select').value.trim() ||
-                      card.querySelector('.q-correct-input').value.trim();
-    const tfLower = tfRaw.toLowerCase();
-    const correct = type === 'True/False'
-                    ? (tfLower === 'true' ? 'True' : tfLower === 'false' ? 'False' : tfRaw)
-                    : card.querySelector('.q-correct-input').value.trim() ||
-                      card.querySelector('.q-correct-select').value.trim();
     const points  = card.querySelector('.q-points').value || '1';
     const required = card.querySelector('.q-required').checked;
 
+    let correct = readCorrect(card).trim();
+    if (type === 'True/False') {
+      const lower = correct.toLowerCase();
+      correct = lower === 'true' ? 'True' : lower === 'false' ? 'False' : correct;
+    }
+    if (!caps.correct) correct = '';
+
+    // Rating bounds travel as JSON in the Config column.
+    let config = '';
+    if (caps.rating) {
+      const rmin = parseInt(card.querySelector('.q-rate-min').value);
+      const rmax = parseInt(card.querySelector('.q-rate-max').value);
+      const min  = isNaN(rmin) ? 1 : rmin;
+      const max  = isNaN(rmax) ? 5 : rmax;
+      if (max <= min) {
+        showFormError(`Question ${i+1}: the rating scale's high value must be greater than the low value.`);
+        valid = false; return;
+      }
+      config = JSON.stringify({
+        min: min, max: max,
+        minLabel: card.querySelector('.q-rate-minlabel').value.trim(),
+        maxLabel: card.querySelector('.q-rate-maxlabel').value.trim()
+      });
+    }
+
     if (!q) { showFormError(`Question ${i+1} is missing text.`); valid = false; return; }
-    // Options only apply to Multiple Choice
+    if (caps.options && !opts) {
+      showFormError(`Question ${i+1} is a ${type} question but has no answer options.`);
+      valid = false; return;
+    }
+
     questions.push([
       q, type,
-      type === 'Multiple Choice' ? opts : '',
-      survey ? '' : correct,          // surveys carry no correct answer
+      caps.options ? opts : '',
+      survey ? '' : correct,           // surveys carry no correct answer
       survey ? '' : points,
       stableId, '',                    // G ImageURL — phase 3
       required ? 'TRUE' : 'FALSE',     // H Required
-      '', '', ''                       // I Condition, J Jump, K Config — phase 4
+      '', '',                          // I Condition, J Jump — phase 4
+      config                           // K Config
     ]);
   });
 
