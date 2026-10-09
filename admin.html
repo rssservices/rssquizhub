@@ -1475,11 +1475,14 @@ function onTypeChange(id, forceType, correctVal) {
     updateRatingSelect(id, correctVal);
     hintEl.textContent = 'Optional — leave blank to collect the rating without grading it.';
   } else {
-    // Multiple Choice, Dropdown, Checkboxes — all driven by the options box
-    updateCorrectSelect(id, correctVal);
+    // Multiple Choice, Dropdown, Checkboxes — all driven by the options box.
+    // Set the default hint FIRST; updateCorrectSelect may replace it with a
+    // warning, and must not have its warning overwritten here.
     hintEl.textContent = caps.multi
       ? 'Select every option that must be ticked. Order does not matter.'
       : 'Select the correct option from the list above.';
+    hintEl.style.color = '';
+    updateCorrectSelect(id, correctVal);
   }
 }
 
@@ -1496,8 +1499,12 @@ function updateCorrectSelect(id, preselect) {
   const selEl = card.querySelector('.q-correct-select');
   const inpEl = card.querySelector('.q-correct-input');
   const raw   = preselect !== undefined ? preselect : readCorrect(card);
-  // A checkbox answer is stored comma-joined; compare per option.
-  const chosen = String(raw || '').split(',').map(s => s.trim()).filter(Boolean);
+  // Only a checkbox answer holds several values. A single-answer question is
+  // ONE value, even when the option text contains commas — splitting it would
+  // shred an option like "1 year, 3 days (parent, spouse)" into fragments that
+  // match nothing, and the empty result would then overwrite the saved answer.
+  const chosen = caps.multi ? splitMulti(raw)
+                            : (String(raw || '').trim() ? [String(raw).trim()] : []);
   // Re-match loosely so that fixing capitalisation or stray spacing in an
   // option doesn't silently discard the correct answer.
   const chosenKeys = chosen.map(c => c.toLowerCase());
@@ -1546,11 +1553,21 @@ function updateRatingSelect(id, preselect) {
   inpEl.value = selEl.value;
 }
 
-// The hidden text input is the single source of truth on save — the select
-// may be multi-value, and for free text there is no select at all.
+// Checkbox answers hold several values in one cell. They are joined with a
+// pipe rather than a comma, because option text frequently contains commas
+// and a comma-joined value cannot be split back apart reliably.
+// Older rows were comma-joined, so reading still accepts both.
+const MULTI_SEP = ' | ';
+
+function splitMulti(raw) {
+  const s = String(raw == null ? '' : raw);
+  const parts = s.indexOf('|') !== -1 ? s.split('|') : s.split(',');
+  return parts.map(x => x.trim()).filter(Boolean);
+}
+
 function readSelect(selEl) {
   if (selEl.multiple) {
-    return Array.from(selEl.selectedOptions).map(o => o.value).filter(Boolean).join(', ');
+    return Array.from(selEl.selectedOptions).map(o => o.value).filter(Boolean).join(MULTI_SEP);
   }
   return selEl.value;
 }
