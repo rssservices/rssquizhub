@@ -1442,6 +1442,17 @@ function onTypeChange(id, forceType, correctVal) {
   selEl.multiple = caps.multi;
   selEl.size     = caps.multi ? 5 : 0;
 
+  // Switching type invalidates any answer captured for the previous type.
+  // Without this the hidden input keeps e.g. "Option B" on a question that is
+  // now True/False, and that stale value saves as the correct answer — a
+  // question nobody could ever get right.
+  const prevType = card.dataset.lastType;
+  if (correctVal === undefined && prevType !== undefined && prevType !== type) {
+    inpEl.value = '';
+    selEl.value = '';
+  }
+  card.dataset.lastType = type;
+
   if (!caps.correct) {           // Long Text is never graded
     inpEl.value = '';
     return;
@@ -1487,13 +1498,33 @@ function updateCorrectSelect(id, preselect) {
   const raw   = preselect !== undefined ? preselect : readCorrect(card);
   // A checkbox answer is stored comma-joined; compare per option.
   const chosen = String(raw || '').split(',').map(s => s.trim()).filter(Boolean);
+  // Re-match loosely so that fixing capitalisation or stray spacing in an
+  // option doesn't silently discard the correct answer.
+  const chosenKeys = chosen.map(c => c.toLowerCase());
 
   selEl.style.display = opts.length ? '' : 'none';
   inpEl.style.display = opts.length ? 'none' : '';
 
+  let matched = 0;
   selEl.innerHTML = (caps.multi ? '' : '<option value="">— select correct answer —</option>') +
-    opts.map(o => `<option value="${esc(o)}" ${chosen.indexOf(o) !== -1 ? 'selected' : ''}>${esc(o)}</option>`).join('');
+    opts.map(o => {
+      const hit = chosenKeys.indexOf(o.toLowerCase()) !== -1;
+      if (hit) matched++;
+      return `<option value="${esc(o)}" ${hit ? 'selected' : ''}>${esc(o)}</option>`;
+    }).join('');
   if (opts.length) inpEl.value = readSelect(selEl);
+
+  // If an answer was set but no longer matches any option, say so rather
+  // than quietly clearing it.
+  const hintEl = card.querySelector('.q-correct-hint');
+  if (hintEl) {
+    if (chosen.length && matched < chosen.length && opts.length) {
+      hintEl.textContent = '⚠ The correct answer no longer matches an option — please pick it again.';
+      hintEl.style.color = '#c53030';
+    } else {
+      hintEl.style.color = '';
+    }
+  }
 }
 
 // Builds the 1–N picker for a Rating question from its configured bounds.
@@ -1524,9 +1555,14 @@ function readSelect(selEl) {
   return selEl.value;
 }
 
+// Whichever control is actually on screen is the one the user set, so read
+// that one. Reading the hidden input first is what let a stale value from a
+// previous question type win over the picker the user could actually see.
 function readCorrect(card) {
-  return card.querySelector('.q-correct-input').value ||
-         readSelect(card.querySelector('.q-correct-select'));
+  const sel = card.querySelector('.q-correct-select');
+  const inp = card.querySelector('.q-correct-input');
+  if (sel && sel.style.display !== 'none') return readSelect(sel);
+  return inp ? inp.value : '';
 }
 
 function syncCorrectInput(id) {
