@@ -73,6 +73,36 @@
     .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:#4f46e5}
     .field textarea{resize:vertical;min-height:80px}
     .field-hint{font-size:12px;color:#a0aec0;margin-top:4px}
+    /* Collapsible cards */
+    .q-card-header{align-items:center}
+    .q-toggle{background:none;border:none;cursor:pointer;font-size:13px;color:#a0aec0;
+      padding:2px 4px;line-height:1;transition:transform .15s;flex:0 0 auto}
+    .q-card:not(.collapsed) .q-toggle{transform:rotate(90deg);color:#4f46e5}
+    .q-card.collapsed .q-fields{display:none}
+    .q-card:not(.collapsed) .q-summary{display:none}
+    .q-summary{flex:1;min-width:0;display:flex;align-items:center;gap:8px;
+      cursor:pointer;overflow:hidden}
+    .sum-text{font-size:13.5px;color:#2d3748;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis;min-width:0}
+    .sum-type{font-size:11px;color:#718096;background:#edf2f7;padding:2px 7px;
+      border-radius:999px;white-space:nowrap;flex:0 0 auto}
+    .sum-badge{font-size:10.5px;padding:2px 7px;border-radius:999px;white-space:nowrap;
+      flex:0 0 auto;font-weight:600}
+    .sum-opt{background:#fefcbf;color:#975a16}
+    .sum-img{background:#e6fffa;color:#234e52}
+    .sum-cond{background:#ebf4ff;color:#2c5282}
+    .sum-jump{background:#faf5ff;color:#553c9a}
+    .q-card.collapsed{padding-bottom:0}
+    .q-card.collapsed:hover{border-color:#cbd5e0}
+
+    /* Advanced settings disclosure */
+    .adv-wrap{border-top:1px solid #edf2f7;margin-top:14px;padding-top:10px}
+    .adv-toggle{background:none;border:none;cursor:pointer;font-size:13px;color:#4f46e5;
+      font-weight:600;font-family:inherit;padding:4px 0}
+    .adv-toggle:hover{text-decoration:underline}
+    .adv-chev{display:inline-block;font-size:11px}
+    .adv-body{margin-top:10px;display:flex;flex-direction:column;gap:14px}
+
     /* Submissions view */
     .subs-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
     .subs-bar input[type=search]{flex:1 1 220px;padding:9px 12px;border:1.5px solid #e2e8f0;
@@ -305,6 +335,15 @@ let tokenClient, accessToken, currentUser;
 let allQuizzes = [], editingQuizId = null, editingRowIndex = null;
 
 // ── AUTH ──────────────────────────────────────────────────────
+// The access token lives only in memory, so a refresh loses it. On load we
+// ask Google for a fresh one silently: if the browser still has an active
+// Google session and this app was already granted consent, a token comes
+// back with no interaction and the panel reopens where it was. Otherwise we
+// fall back to the sign-in screen.
+const SIGNED_OUT_KEY = 'rssforms-signed-out';
+let silentDone = false;    // only ever attempt this once per page load
+let silentActive = false;  // distinguishes a silent failure from a real one
+
 window.addEventListener('load', () => {
   const t = setInterval(() => {
     if (window.google && google.accounts) {
@@ -312,19 +351,51 @@ window.addEventListener('load', () => {
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID, scope: SCOPES,
         callback: handleToken,
-        error_callback: e => showLoginError('Sign-in failed: ' + (e.message || e.type))
+        error_callback: e => {
+          // A silent attempt failing is the normal "not signed in" path,
+          // not an error worth showing.
+          if (silentActive) { endSilent(); return; }
+          showLoginError('Sign-in failed: ' + (e.message || e.type));
+        }
       });
+      trySilentSignIn();
     }
   }, 200);
 });
 
+function trySilentSignIn() {
+  if (silentDone || !tokenClient) return;
+  // Respect an explicit sign-out in this tab.
+  try { if (sessionStorage.getItem(SIGNED_OUT_KEY)) { silentDone = true; return; } } catch (e) {}
+  silentDone = true;
+  silentActive = true;
+  document.getElementById('login-wrap').style.display = 'none';
+  showFullLoading('Restoring your session...');
+  // If Google never calls either callback, don't strand the user on a
+  // spinner — drop back to the sign-in screen.
+  setTimeout(() => { if (silentActive) endSilent(); }, 6000);
+  try {
+    tokenClient.requestAccessToken({ prompt: '' });
+  } catch (e) {
+    endSilent();
+  }
+}
+
+function endSilent() {
+  silentActive = false;
+  hideFullLoading();
+  if (!accessToken) document.getElementById('login-wrap').style.display = 'flex';
+}
+
 function signIn() {
   if (!tokenClient) { showLoginError('Still loading. Try again.'); return; }
+  try { sessionStorage.removeItem(SIGNED_OUT_KEY); } catch (e) {}
   tokenClient.requestAccessToken({ prompt: 'select_account' });
 }
 
 async function handleToken(resp) {
-  if (resp.error) { showLoginError(resp.error); return; }
+  silentActive = false;
+  if (resp.error) { endSilent(); showLoginError(resp.error); return; }
   accessToken = resp.access_token;
   showFullLoading('Loading admin panel...');
   try {
@@ -345,6 +416,10 @@ async function handleToken(resp) {
 
 function signOut() {
   accessToken = null;
+  // Remember the sign-out for this browser tab, so refreshing doesn't
+  // silently sign the person straight back in. Cleared when they choose to
+  // sign in again. Not persisted beyond the tab.
+  try { sessionStorage.setItem(SIGNED_OUT_KEY, '1'); } catch (e) {}
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-wrap').style.display = 'flex';
 }
@@ -539,6 +614,7 @@ async function editQuiz(quizId) {
     updateMoveButtons();
     onModeChange();
     refreshLogicControls(); // all cards now exist, so data-want values resolve
+    collapseAll();          // open a saved form as a scannable list
 
     // A legacy quiz that already has responses will be migrated to the new
     // column layout on save. Warn before that happens, not after.
@@ -983,6 +1059,77 @@ function updateImagePreview(id) {
      <div class="img-preview-msg">Loading…</div>`;
 }
 
+// ── CARD COLLAPSE ─────────────────────────────────────────────
+// Only one card is open at a time. The rest show a one-line summary, so a
+// long form stays scannable instead of being metres of form fields.
+function toggleCard(id) {
+  const card = document.querySelector(`[data-qid="${id}"]`);
+  if (!card) return;
+  const wasOpen = !card.classList.contains('collapsed');
+  collapseAll();
+  if (wasOpen) { updateCardSummary(id); return; }   // clicking the open one closes it
+  card.classList.remove('collapsed');
+}
+
+function collapseAll() {
+  document.querySelectorAll('#questions-list .q-card').forEach(c => {
+    c.classList.add('collapsed');
+    updateCardSummary(c.dataset.qid);
+  });
+}
+
+// A validation failure on a collapsed card would name a question the user
+// can't see — so open it and scroll to it.
+function failCard(card, msg) {
+  showFormError(msg);
+  if (card) {
+    collapseAll();
+    card.classList.remove('collapsed');
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  return false;
+}
+
+function toggleAdv(id) {
+  const card = document.querySelector(`[data-qid="${id}"]`);
+  if (!card) return;
+  const body = card.querySelector('.adv-body');
+  const chev = card.querySelector('.adv-chev');
+  const open = body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  chev.textContent = open ? '▾' : '▸';
+}
+
+// The collapsed line: what this card is, plus badges for any advanced
+// setting actually in use — so nothing hidden is invisible.
+function updateCardSummary(id) {
+  const card = document.querySelector(`[data-qid="${id}"]`);
+  if (!card) return;
+  const box = card.querySelector('.q-summary');
+  if (!box) return;
+
+  const badges = [];
+  const img = card.querySelector('.q-image');
+  if (img && img.value.trim()) badges.push(['img', 'Image']);
+  const cond = card.querySelector('.q-cond-qid');
+  if (cond && cond.value) badges.push(['cond', 'Conditional']);
+
+  let text, meta = '';
+  if (card.dataset.kind === 'section') {
+    text = card.querySelector('.s-title').value.trim() || 'Untitled section';
+  } else {
+    text = card.querySelector('.q-question').value.trim() || 'Untitled question';
+    meta = card.querySelector('.q-type').value;
+    if (!card.querySelector('.q-required').checked) badges.push(['opt', 'Optional']);
+    if (card.querySelectorAll('.jump-row').length) badges.push(['jump', 'Jumps']);
+  }
+
+  box.innerHTML =
+    `<span class="sum-text">${esc(trunc(text, 70))}</span>` +
+    (meta ? `<span class="sum-type">${esc(meta)}</span>` : '') +
+    badges.map(b => `<span class="sum-badge sum-${b[0]}">${esc(b[1])}</span>`).join('');
+}
+
 // ── QUESTION BUILDER ──────────────────────────────────────────
 // Short, collision-resistant id — readable in the sheet and in R_ headers.
 function newStableId(prefix) {
@@ -1012,7 +1159,9 @@ function addQuestion(data = {}) {
   div.dataset.stableId = data.stableId || newStableId('q');
   div.innerHTML = `
     <div class="q-card-header">
+      <button type="button" class="q-toggle" onclick="toggleCard(${id})" title="Expand or collapse">▸</button>
       <span class="q-num">${num}</span>
+      <div class="q-summary" onclick="toggleCard(${id})"></div>
       <div class="q-card-header-right">
         ${moveButtonsHtml(id)}
         <button class="btn-xs danger" onclick="removeQuestion(${id})">✕ Remove</button>
@@ -1021,14 +1170,7 @@ function addQuestion(data = {}) {
     <div class="q-fields">
       <div class="field">
         <label>Question</label>
-        <textarea class="q-question" rows="2" oninput="refreshLogicControls()" placeholder="Enter question text...">${esc(data.question || '')}</textarea>
-      </div>
-      <div class="field">
-        <label>Image <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
-        <input type="text" class="q-image" placeholder="Paste an image URL, or a Google Drive share link"
-               value="${esc(data.imageUrl || '')}" oninput="updateImagePreview(${id})">
-        <div class="field-hint">Shown above the answer options. Drive links are converted automatically — the file must be shared as “Anyone with the link”.</div>
-        <div class="img-preview" style="display:none"></div>
+        <textarea class="q-question" rows="2" oninput="refreshLogicControls(); updateCardSummary(${id})" placeholder="Enter question text...">${esc(data.question || '')}</textarea>
       </div>
       <div class="q-row">
         <div class="field">
@@ -1043,41 +1185,6 @@ function addQuestion(data = {}) {
             <option value="Long Text"        ${type==='Long Text'?'selected':''}>Long Text (paragraph)</option>
           </select>
         </div>
-        <div class="field q-points-wrap">
-          <label>Points</label>
-          <input type="number" class="q-points" value="${esc(data.points || '1')}" min="0" max="100">
-        </div>
-      </div>
-      <div class="field">
-        <div class="toggle-row">
-          <div>
-            <label style="margin-bottom:2px">Required</label>
-            <div class="field-hint" style="margin:0">Takers cannot continue past this question without answering</div>
-          </div>
-          <label class="toggle"><input type="checkbox" class="q-required" ${data.required === false ? '' : 'checked'}><span class="slider"></span></label>
-        </div>
-      </div>
-      <div class="field logic-wrap">
-        <label>Show only if <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
-        <div class="logic-row">
-          <select class="q-cond-qid" onchange="refreshLogicControls()"></select>
-          <select class="q-cond-op" onchange="refreshLogicControls()">
-            <option value="is">is</option>
-            <option value="is_not">is not</option>
-            <option value="includes">includes</option>
-            <option value="any_of">is any of</option>
-          </select>
-          <input type="text" class="q-cond-value" list="dl-${id}" placeholder="answer">
-          <datalist id="dl-${id}"></datalist>
-        </div>
-        <div class="field-hint">Leave on “always show” for no condition. Only questions above this one, with fixed options, can be used.</div>
-      </div>
-      <div class="field jump-wrap">
-        <label>After answering, jump to <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
-        <div class="jump-rows"></div>
-        <button type="button" class="add-q-btn" onclick="addJumpRow(${id})">+ Add jump rule</button>
-        <datalist id="jdl-${id}"></datalist>
-        <div class="field-hint">Skips ahead to a later section. Use <code>*</code> as the answer to match anything.</div>
       </div>
       <div class="q-rating-wrap" style="display:none">
         <div class="q-row">
@@ -1111,6 +1218,57 @@ function addQuestion(data = {}) {
         <input type="text" class="q-correct-input" placeholder="Type correct answer..." value="${esc(data.correctAnswer || '')}">
         <div class="field-hint q-correct-hint">For Multiple Choice: select from the options above. For Short Text: leave empty if ungraded.</div>
       </div>
+
+      <!-- Everything below is occasional: hidden until asked for, with
+           badges on the collapsed card showing what is actually in use. -->
+      <div class="adv-wrap">
+        <button type="button" class="adv-toggle" onclick="toggleAdv(${id})">
+          <span class="adv-chev">▸</span> More options
+        </button>
+        <div class="adv-body" style="display:none">
+          <div class="q-row">
+            <div class="field q-points-wrap">
+              <label>Points</label>
+              <input type="number" class="q-points" value="${esc(data.points || '1')}" min="0" max="100">
+            </div>
+            <div class="field">
+              <div class="toggle-row" style="height:100%">
+                <div><label style="margin-bottom:2px">Required</label></div>
+                <label class="toggle"><input type="checkbox" class="q-required" ${data.required === false ? '' : 'checked'} onchange="updateCardSummary(${id})"><span class="slider"></span></label>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Image <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+            <input type="text" class="q-image" placeholder="Paste an image URL, or a Google Drive share link"
+                   value="${esc(data.imageUrl || '')}" oninput="updateImagePreview(${id}); updateCardSummary(${id})">
+            <div class="field-hint">Drive links are converted automatically — the file must be shared as “Anyone with the link”.</div>
+            <div class="img-preview" style="display:none"></div>
+          </div>
+          <div class="field logic-wrap">
+            <label>Show only if <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+            <div class="logic-row">
+              <select class="q-cond-qid" onchange="refreshLogicControls(); updateCardSummary(${id})"></select>
+              <select class="q-cond-op" onchange="refreshLogicControls()">
+                <option value="is">is</option>
+                <option value="is_not">is not</option>
+                <option value="includes">includes</option>
+                <option value="any_of">is any of</option>
+              </select>
+              <input type="text" class="q-cond-value" list="dl-${id}" placeholder="answer">
+              <datalist id="dl-${id}"></datalist>
+            </div>
+            <div class="field-hint">Only questions above this one, with fixed options, can be used.</div>
+          </div>
+          <div class="field jump-wrap">
+            <label>After answering, jump to <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+            <div class="jump-rows"></div>
+            <button type="button" class="add-q-btn" onclick="addJumpRow(${id})">+ Add jump rule</button>
+            <datalist id="jdl-${id}"></datalist>
+            <div class="field-hint">Skips ahead to a later section. Use <code>*</code> as the answer to match anything.</div>
+          </div>
+        </div>
+      </div>
     </div>`;
 
   list.appendChild(div);
@@ -1124,6 +1282,11 @@ function addQuestion(data = {}) {
   if (data.imageUrl) updateImagePreview(id);
   applySavedLogic(div, data);
   refreshLogicControls();
+  // A card added by hand opens for editing; one restored while loading a
+  // saved form stays shut (editQuiz collapses everything afterwards).
+  collapseAll();
+  div.classList.remove('collapsed');
+  updateCardSummary(id);
 }
 
 // ── SECTION BUILDER ───────────────────────────────────────────
@@ -1138,7 +1301,9 @@ function addSection(data = {}) {
   div.dataset.stableId = data.stableId || newStableId('s');
   div.innerHTML = `
     <div class="q-card-header">
+      <button type="button" class="q-toggle" onclick="toggleCard(${id})" title="Expand or collapse">▸</button>
       <span class="s-label">Section</span>
+      <div class="q-summary" onclick="toggleCard(${id})"></div>
       <div class="q-card-header-right">
         ${moveButtonsHtml(id)}
         <button class="btn-xs danger" onclick="removeQuestion(${id})">✕ Remove</button>
@@ -1147,33 +1312,40 @@ function addSection(data = {}) {
     <div class="q-fields">
       <div class="field">
         <label>Section Title</label>
-        <input type="text" class="s-title" oninput="refreshLogicControls()" placeholder="e.g. Part 1 – Active Listening" value="${esc(data.title || '')}">
+        <input type="text" class="s-title" oninput="refreshLogicControls(); updateCardSummary(${id})" placeholder="e.g. Part 1 – Active Listening" value="${esc(data.title || '')}">
       </div>
       <div class="field">
         <label>Section Instructions <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
         <textarea class="s-instructions" rows="3" placeholder="Shown above every question in this section.">${esc(data.instructions || '')}</textarea>
       </div>
-      <div class="field">
-        <label>Image <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
-        <input type="text" class="q-image" placeholder="Paste an image URL, or a Google Drive share link"
-               value="${esc(data.imageUrl || '')}" oninput="updateImagePreview(${id})">
-        <div class="field-hint">Shown in the section banner, above every question in this section.</div>
-        <div class="img-preview" style="display:none"></div>
-      </div>
-      <div class="field logic-wrap">
-        <label>Show this section only if <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
-        <div class="logic-row">
-          <select class="q-cond-qid" onchange="refreshLogicControls()"></select>
-          <select class="q-cond-op" onchange="refreshLogicControls()">
-            <option value="is">is</option>
-            <option value="is_not">is not</option>
-            <option value="includes">includes</option>
-            <option value="any_of">is any of</option>
-          </select>
-          <input type="text" class="q-cond-value" list="dl-${id}" placeholder="answer">
-          <datalist id="dl-${id}"></datalist>
+      <div class="adv-wrap">
+        <button type="button" class="adv-toggle" onclick="toggleAdv(${id})">
+          <span class="adv-chev">▸</span> More options
+        </button>
+        <div class="adv-body" style="display:none">
+          <div class="field">
+            <label>Image <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+            <input type="text" class="q-image" placeholder="Paste an image URL, or a Google Drive share link"
+                   value="${esc(data.imageUrl || '')}" oninput="updateImagePreview(${id}); updateCardSummary(${id})">
+            <div class="field-hint">Shown in the section banner, above every question in this section.</div>
+            <div class="img-preview" style="display:none"></div>
+          </div>
+          <div class="field logic-wrap">
+            <label>Show this section only if <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+            <div class="logic-row">
+              <select class="q-cond-qid" onchange="refreshLogicControls(); updateCardSummary(${id})"></select>
+              <select class="q-cond-op" onchange="refreshLogicControls()">
+                <option value="is">is</option>
+                <option value="is_not">is not</option>
+                <option value="includes">includes</option>
+                <option value="any_of">is any of</option>
+              </select>
+              <input type="text" class="q-cond-value" list="dl-${id}" placeholder="answer">
+              <datalist id="dl-${id}"></datalist>
+            </div>
+            <div class="field-hint">Hiding a section hides every question inside it.</div>
+          </div>
         </div>
-        <div class="field-hint">Hiding a section hides every question inside it.</div>
       </div>
     </div>`;
 
@@ -1183,6 +1355,9 @@ function addSection(data = {}) {
   if (data.imageUrl) updateImagePreview(id);
   applySavedLogic(div, data);
   refreshLogicControls();
+  collapseAll();
+  div.classList.remove('collapsed');
+  updateCardSummary(id);
 }
 
 // ── REORDER ───────────────────────────────────────────────────
@@ -1393,9 +1568,9 @@ async function saveQuiz() {
       const sTitle = card.querySelector('.s-title').value.trim();
       const sInstr = card.querySelector('.s-instructions').value.trim();
       const sImg   = card.querySelector('.q-image').value.trim();
-      if (!sTitle) { showFormError(`Section ${sNum} is missing a title.`); valid = false; return; }
+      if (!sTitle) { valid = failCard(card, `Section ${sNum} is missing a title.`); return; }
       const sLogic = readLogic(card, ctx, `Section ${sNum}`);
-      if (sLogic.error) { showFormError(sLogic.error); valid = false; return; }
+      if (sLogic.error) { valid = failCard(card, sLogic.error); return; }
       questions.push([sTitle, 'Section', sInstr, '', '', stableId, sImg, '', sLogic.condition, '', '']);
       return;
     }
@@ -1424,8 +1599,8 @@ async function saveQuiz() {
       const min  = isNaN(rmin) ? 1 : rmin;
       const max  = isNaN(rmax) ? 5 : rmax;
       if (max <= min) {
-        showFormError(`Question ${i+1}: the rating scale's high value must be greater than the low value.`);
-        valid = false; return;
+        valid = failCard(card, `Question ${i+1}: the rating scale's high value must be greater than the low value.`);
+        return;
       }
       config = JSON.stringify({
         min: min, max: max,
@@ -1434,14 +1609,14 @@ async function saveQuiz() {
       });
     }
 
-    if (!q) { showFormError(`Question ${i+1} is missing text.`); valid = false; return; }
+    if (!q) { valid = failCard(card, `Question ${i+1} is missing text.`); return; }
     if (caps.options && !opts) {
-      showFormError(`Question ${i+1} is a ${type} question but has no answer options.`);
-      valid = false; return;
+      valid = failCard(card, `Question ${i+1} is a ${type} question but has no answer options.`);
+      return;
     }
 
     const logic = readLogic(card, ctx, `Question ${i+1}`);
-    if (logic.error) { showFormError(logic.error); valid = false; return; }
+    if (logic.error) { valid = failCard(card, logic.error); return; }
 
     questions.push([
       q, type,
