@@ -35,6 +35,19 @@
     .option-item:has(input:checked) label{border-color:#4f46e5;background:#f5f3ff}
     .text-input{width:100%;padding:12px 14px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:15px;font-family:inherit;resize:vertical;min-height:90px;transition:border-color .15s}
     .text-input:focus{outline:none;border-color:#4f46e5}
+    select.text-input{min-height:0;cursor:pointer;background:#fff}
+    /* Rating scale — the numbers wrap on narrow screens rather than overflow */
+    .rating-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+    .rating-item{flex:1 1 56px}
+    .rating-item input{position:absolute;opacity:0;width:0;height:0}
+    .rating-item span{display:flex;align-items:center;justify-content:center;min-height:48px;
+      border:1.5px solid #e2e8f0;border-radius:8px;font-size:16px;font-weight:600;
+      color:#4a5568;cursor:pointer;transition:all .15s;background:#fff}
+    .rating-item span:hover{border-color:#a5b4fc;background:#f5f3ff}
+    .rating-item input:checked + span{background:#4f46e5;border-color:#4f46e5;color:#fff}
+    .rating-item input:focus-visible + span{outline:2px solid #4f46e5;outline-offset:2px}
+    .rating-labels{display:flex;justify-content:space-between;gap:12px;margin-top:8px;
+      font-size:12.5px;color:#718096}
     .nav-buttons{display:flex;justify-content:space-between;align-items:center;margin-top:28px;gap:12px}
     .score-circle{width:130px;height:130px;border-radius:50%;background:linear-gradient(135deg,#4f46e5,#7c3aed);display:flex;flex-direction:column;align-items:center;justify-content:center;margin:0 auto 24px;color:#fff}
     .score-number{font-size:38px;font-weight:800;line-height:1}
@@ -220,7 +233,43 @@ function renderQuestion() {
     q.required === false ? ' <span style="font-weight:400;opacity:.6;font-size:.85em">(optional)</span>' : ''
   }</div>`;
 
-  if (type.includes('multiple') || type.includes('mc') || type.includes('choice')) {
+  if (type === 'checkboxes' || type.includes('checkbox')) {
+    // Multi-select. Stored as a comma-joined string so it reads cleanly in
+    // the sheet; the backend compares it as an order-insensitive set.
+    const chosen = String(saved || '').split(',').map(s => s.trim()).filter(Boolean);
+    html += `<ul class="options-list">`;
+    (q.options || []).forEach(opt => {
+      const chk = chosen.indexOf(opt) !== -1 ? 'checked' : '';
+      html += `<li class="option-item"><label>
+        <input type="checkbox" value="${esc(opt)}" ${chk} onchange="saveCheckbox(this)">
+        <span>${esc(opt)}</span>
+      </label></li>`;
+    });
+    html += `</ul>`;
+  } else if (type === 'dropdown' || type.includes('dropdown')) {
+    html += `<select class="text-input" onchange="saveAnswer(this.value)">
+      <option value="">— select an answer —</option>` +
+      (q.options || []).map(opt =>
+        `<option value="${esc(opt)}" ${saved === opt ? 'selected' : ''}>${esc(opt)}</option>`
+      ).join('') + `</select>`;
+  } else if (type === 'rating' || type.includes('rating') || type.includes('scale')) {
+    const cfg = q.config || {};
+    const min = Number.isFinite(+cfg.min) ? +cfg.min : 1;
+    const max = Number.isFinite(+cfg.max) ? +cfg.max : 5;
+    html += `<div class="rating-row">`;
+    for (let n = min; n <= max && n - min < 50; n++) {
+      html += `<label class="rating-item">
+        <input type="radio" name="q" value="${n}" ${String(saved) === String(n) ? 'checked' : ''} onchange="saveAnswer(this.value)">
+        <span>${n}</span>
+      </label>`;
+    }
+    html += `</div>`;
+    if ((cfg.minLabel || '').trim() || (cfg.maxLabel || '').trim()) {
+      html += `<div class="rating-labels">
+        <span>${esc(cfg.minLabel || '')}</span><span>${esc(cfg.maxLabel || '')}</span>
+      </div>`;
+    }
+  } else if (type.includes('multiple') || type.includes('mc') || type.includes('choice')) {
     html += `<ul class="options-list">`;
     (q.options || []).forEach(opt => {
       const chk = saved === opt ? 'checked' : '';
@@ -241,7 +290,9 @@ function renderQuestion() {
     });
     html += `</ul>`;
   } else {
-    html += `<textarea class="text-input" placeholder="Type your answer here..." oninput="saveAnswer(this.value)">${esc(saved || '')}</textarea>`;
+    // Short Text and Long Text — same control, different height.
+    const rows = type.includes('long') || type.includes('paragraph') ? 7 : 3;
+    html += `<textarea class="text-input" rows="${rows}" placeholder="Type your answer here..." oninput="saveAnswer(this.value)">${esc(saved || '')}</textarea>`;
   }
 
   document.getElementById('question-card').innerHTML = html;
@@ -251,6 +302,14 @@ function renderQuestion() {
 }
 
 function saveAnswer(val) { answers[currentIndex] = val; }
+
+// Collects every ticked box in the current question into one comma-joined
+// value, keeping the order the options were shown in.
+function saveCheckbox() {
+  const boxes = document.querySelectorAll('#question-card input[type="checkbox"]');
+  const picked = Array.from(boxes).filter(b => b.checked).map(b => b.value);
+  answers[currentIndex] = picked.join(', ');
+}
 
 function nextOrSubmit() {
   const q   = quizData.questions[currentIndex];
