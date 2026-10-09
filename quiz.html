@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RSS Quiz Hub – Quiz</title>
+  <title>RSS Forms</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;min-height:100vh;display:flex;align-items:center;justify-content:center;color:#1a202c}
@@ -76,7 +76,7 @@
     <div class="logo">
       <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
     </div>
-    <h1>RSS Quiz Hub</h1>
+    <h1>RSS Forms</h1>
     <p class="subtitle" id="quiz-subtitle">Loading quiz...</p>
     <div class="instructions-box" id="quiz-instructions" style="display:none"></div>
     <p style="margin-top:16px">Please enter your details below to begin.</p>
@@ -216,7 +216,9 @@ function renderQuestion() {
         ? `<div class="section-banner-text">${esc(q.section.instructions.trim())}</div>` : ''}
     </div>`;
   }
-  html += `<div class="question-text">${esc(q.question)}</div>`;
+  html += `<div class="question-text">${esc(q.question)}${
+    q.required === false ? ' <span style="font-weight:400;opacity:.6;font-size:.85em">(optional)</span>' : ''
+  }</div>`;
 
   if (type.includes('multiple') || type.includes('mc') || type.includes('choice')) {
     html += `<ul class="options-list">`;
@@ -251,8 +253,11 @@ function renderQuestion() {
 function saveAnswer(val) { answers[currentIndex] = val; }
 
 function nextOrSubmit() {
+  const q   = quizData.questions[currentIndex];
   const ans = answers[currentIndex];
-  if (!ans || ans.trim() === '') {
+  const isBlank = ans == null || String(ans).trim() === '';
+  // Questions are required unless the admin marked them optional.
+  if (q.required !== false && isBlank) {
     showError('quiz-error', 'Please answer this question before continuing.');
     return;
   }
@@ -274,14 +279,30 @@ async function submitQuiz() {
   showScreen('screen-loading');
 
   try {
-    const params = new URLSearchParams({
-      action:  'submit',
-      quizId,
-      name:    takerName,
-      email:   takerEmail,
-      answers: JSON.stringify(answers)
+    // POSTed as text/plain so the browser skips the CORS preflight that
+    // Apps Script web apps don't answer. Answers are keyed by question id,
+    // and `seen` records what this taker was actually shown, so the backend
+    // can store and score without relying on column position.
+    const answersByQid = {};
+    const seen = [];
+    quizData.questions.forEach((q, i) => {
+      const qid = q.qid || ('p' + (i + 1));
+      answersByQid[qid] = answers[i] == null ? '' : answers[i];
+      seen.push(qid);
     });
-    const res    = await fetch(`${SCRIPT_URL}?${params.toString()}`);
+
+    const res = await fetch(SCRIPT_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action:  'submit',
+        quizId:  quizId,
+        name:    takerName,
+        email:   takerEmail,
+        answers: answersByQid,
+        seen:    seen
+      })
+    });
     const result = await res.json();
 
     if (result.error) throw new Error(result.error);
@@ -305,18 +326,28 @@ function showResults(result) {
   }
 
   const { pct, scoreStr, results, total } = result;
-  document.getElementById('score-number').textContent = pct !== null ? pct + '%' : '✓';
-  document.getElementById('score-label').textContent  = total > 0 ? scoreStr : 'Submitted';
-  document.getElementById('result-msg').textContent   =
-    pct === null ? '✅ Quiz Complete!' :
-    pct >= 80    ? '🎉 Excellent work!' :
-    pct >= 60    ? '👍 Good effort!'   : '📚 Keep studying!';
+  const isSurvey = !!(result.isSurvey || quizData.isSurvey);
+
+  if (isSurvey) {
+    // Surveys aren't scored — no number, no right/wrong, just a receipt.
+    document.getElementById('score-number').textContent = '✓';
+    document.getElementById('score-label').textContent  = 'Response recorded';
+    document.getElementById('result-msg').textContent   = '🙏 Thanks for your response!';
+  } else {
+    document.getElementById('score-number').textContent = pct !== null ? pct + '%' : '✓';
+    document.getElementById('score-label').textContent  = total > 0 ? scoreStr : 'Submitted';
+    document.getElementById('result-msg').textContent   =
+      pct === null ? '✅ Quiz Complete!' :
+      pct >= 80    ? '🎉 Excellent work!' :
+      pct >= 60    ? '👍 Good effort!'   : '📚 Keep studying!';
+  }
 
   let html = '';
   let lastSection = null;
   quizData.questions.forEach((q, i) => {
-    const userAns  = answers[i] || '';
-    const isCorrect = results ? results[i] : null;
+    const userAns  = answers[i] == null || String(answers[i]).trim() === ''
+                     ? '(no answer)' : answers[i];
+    const isCorrect = isSurvey ? null : (results ? results[i] : null);
 
     const secTitle = q.section ? q.section.title : null;
     if (secTitle && secTitle !== lastSection) {
@@ -328,7 +359,7 @@ function showResults(result) {
       html += `<div class="answer-item answer-open">
         <div class="answer-q">Q${i+1}: ${esc(q.question)}</div>
         <div class="answer-given">Your answer: ${esc(userAns)}</div>
-        <div class="answer-verdict">Open-ended — not auto-graded</div>
+        <div class="answer-verdict">${isSurvey ? 'Recorded' : 'Open-ended — not auto-graded'}</div>
       </div>`;
     } else if (isCorrect) {
       html += `<div class="answer-item answer-correct">
