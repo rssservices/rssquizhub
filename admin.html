@@ -73,6 +73,9 @@
     .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:#4f46e5}
     .field textarea{resize:vertical;min-height:80px}
     .field-hint{font-size:12px;color:#a0aec0;margin-top:4px}
+    .img-preview{margin-top:8px;padding:8px;border:1px solid #e2e8f0;border-radius:8px;background:#f7fafc}
+    .img-preview img{max-width:100%;max-height:180px;border-radius:6px;display:block}
+    .img-preview-msg{font-size:12px;margin-top:6px;color:#718096}
     .toggle-row{display:flex;align-items:center;justify-content:space-between}
     .toggle{position:relative;display:inline-block;width:42px;height:24px}
     .toggle input{opacity:0;width:0;height:0}
@@ -461,7 +464,8 @@ async function editQuiz(quizId) {
         addSection({
           title:        r[0] || '',
           instructions: r[2] || '',
-          stableId:     r[5] || ''   // blank on legacy rows → a new id is minted
+          stableId:     r[5] || '',  // blank on legacy rows → a new id is minted
+          imageUrl:     r[6] || ''
         });
       } else {
         addQuestion({
@@ -471,6 +475,7 @@ async function editQuiz(quizId) {
           correctAnswer: r[3] || '',
           points:        r[4] || '1',
           stableId:      r[5] || '',
+          imageUrl:      r[6] || '',
           required:      String(r[7] || '').toUpperCase() !== 'FALSE',
           config:        r[10] || ''
         });
@@ -524,6 +529,38 @@ function onModeChange() {
   });
 }
 
+// ── IMAGES ────────────────────────────────────────────────────
+// Mirrors normalizeImageUrl() in the Apps Script backend, so the preview
+// here shows exactly what the taker will see. Keep the two in step.
+function normalizeImageUrl(url) {
+  const u = String(url || '').trim();
+  if (!u) return '';
+  const m = u.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([A-Za-z0-9_-]{10,})/);
+  if (m) return 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w1200';
+  return u;
+}
+
+// Live preview. A broken or unshared link is reported here rather than
+// discovered by a quiz taker.
+function updateImagePreview(id) {
+  const card = document.querySelector(`[data-qid="${id}"]`);
+  if (!card) return;
+  const box = card.querySelector('.img-preview');
+  const raw = card.querySelector('.q-image').value.trim();
+  if (!raw) { box.style.display = 'none'; box.innerHTML = ''; return; }
+
+  const url = normalizeImageUrl(raw);
+  box.style.display = '';
+  box.innerHTML =
+    `<img src="${esc(url)}" alt="Preview"
+       onload="this.nextElementSibling.textContent='Loads OK' + (${JSON.stringify(url !== raw)} ? ' (converted Drive link)' : '');
+               this.nextElementSibling.style.color='#2f855a'"
+       onerror="this.style.display='none';
+                this.nextElementSibling.textContent='Could not load this image — check the URL, and that the file is shared as Anyone with the link.';
+                this.nextElementSibling.style.color='#c53030'">
+     <div class="img-preview-msg">Loading…</div>`;
+}
+
 // ── QUESTION BUILDER ──────────────────────────────────────────
 // Short, collision-resistant id — readable in the sheet and in R_ headers.
 function newStableId(prefix) {
@@ -563,6 +600,13 @@ function addQuestion(data = {}) {
       <div class="field">
         <label>Question</label>
         <textarea class="q-question" rows="2" placeholder="Enter question text...">${esc(data.question || '')}</textarea>
+      </div>
+      <div class="field">
+        <label>Image <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+        <input type="text" class="q-image" placeholder="Paste an image URL, or a Google Drive share link"
+               value="${esc(data.imageUrl || '')}" oninput="updateImagePreview(${id})">
+        <div class="field-hint">Shown above the answer options. Drive links are converted automatically — the file must be shared as “Anyone with the link”.</div>
+        <div class="img-preview" style="display:none"></div>
       </div>
       <div class="q-row">
         <div class="field">
@@ -633,6 +677,7 @@ function addQuestion(data = {}) {
   onTypeChange(id, type, data.correctAnswer);
   updateMoveButtons();
   onModeChange(); // a new card must respect the current Quiz/Survey mode
+  if (data.imageUrl) updateImagePreview(id);
 }
 
 // ── SECTION BUILDER ───────────────────────────────────────────
@@ -662,11 +707,19 @@ function addSection(data = {}) {
         <label>Section Instructions <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
         <textarea class="s-instructions" rows="3" placeholder="Shown above every question in this section.">${esc(data.instructions || '')}</textarea>
       </div>
+      <div class="field">
+        <label>Image <span style="color:#a0aec0;font-weight:400">(optional)</span></label>
+        <input type="text" class="q-image" placeholder="Paste an image URL, or a Google Drive share link"
+               value="${esc(data.imageUrl || '')}" oninput="updateImagePreview(${id})">
+        <div class="field-hint">Shown in the section banner, above every question in this section.</div>
+        <div class="img-preview" style="display:none"></div>
+      </div>
     </div>`;
 
   list.appendChild(div);
   renumberQuestions();
   updateMoveButtons();
+  if (data.imageUrl) updateImagePreview(id);
 }
 
 // ── REORDER ───────────────────────────────────────────────────
@@ -869,8 +922,9 @@ async function saveQuiz() {
       sNum++;
       const sTitle = card.querySelector('.s-title').value.trim();
       const sInstr = card.querySelector('.s-instructions').value.trim();
+      const sImg   = card.querySelector('.q-image').value.trim();
       if (!sTitle) { showFormError(`Section ${sNum} is missing a title.`); valid = false; return; }
-      questions.push([sTitle, 'Section', sInstr, '', '', stableId, '', '', '', '', '']);
+      questions.push([sTitle, 'Section', sInstr, '', '', stableId, sImg, '', '', '', '']);
       return;
     }
 
@@ -919,7 +973,8 @@ async function saveQuiz() {
       caps.options ? opts : '',
       survey ? '' : correct,           // surveys carry no correct answer
       survey ? '' : points,
-      stableId, '',                    // G ImageURL — phase 3
+      stableId,
+      card.querySelector('.q-image').value.trim(),  // G ImageURL
       required ? 'TRUE' : 'FALSE',     // H Required
       '', '',                          // I Condition, J Jump — phase 4
       config                           // K Config
